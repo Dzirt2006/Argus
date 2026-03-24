@@ -1,0 +1,62 @@
+services:
+  vllm:
+    image: vllm/vllm-openai:latest
+    ports:
+      - "8000:8000"
+    volumes:
+      - huggingface-cache:/root/.cache/huggingface
+    ipc: host
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    command: >
+      --model Qwen/Qwen3.5-4B
+      --enable-auto-tool-choice
+      --tool-call-parser qwen3_coder
+      --reasoning-parser qwen3
+      --language-model-only
+      --enable-prefix-caching
+      --gpu-memory-utilization 0.70
+      --max-model-len 16384
+
+  agent:
+    build:
+      context: .
+      dockerfile: agent/Dockerfile
+    env_file: .env
+    depends_on:
+      - vllm
+      - filesystem
+      - system
+    stdin_open: true
+    tty: true
+
+  filesystem:
+    build:
+      context: .
+      dockerfile: mcp_servers/filesystem/Dockerfile
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./data:/data
+
+  system:
+    build:
+      context: .
+      dockerfile: mcp_servers/system/Dockerfile
+    ports:
+      - "8002:8002"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+volumes:
+  huggingface-cache:
