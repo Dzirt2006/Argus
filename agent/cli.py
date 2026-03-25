@@ -1,4 +1,5 @@
 import asyncio
+import time
 import uuid
 from pathlib import Path
 
@@ -9,8 +10,10 @@ from langgraph.types import Command
 from agent.agent import create_agent
 from agent.config import settings
 from agent.mcp import create_mcp_client
+from agent.tracing import setup_logging, new_request_id
 
-log = structlog.get_logger()
+setup_logging()
+log = structlog.get_logger("agent.cli")
 
 
 def _handle_interrupts(interrupts: list) -> list[Command]:
@@ -56,6 +59,10 @@ async def main():
             if not user_input.strip():
                 continue
 
+            request_id = new_request_id()
+            structlog.contextvars.bind_contextvars(request_id=request_id)
+            t0 = time.monotonic()
+
             messages.append(HumanMessage(content=user_input))
             result = await agent.ainvoke({"messages": messages}, config)
 
@@ -67,6 +74,10 @@ async def main():
                     result = await agent.ainvoke(cmd, config)
 
             messages = result["messages"]
+            duration = time.monotonic() - t0
+            log.info("turn_done", request_id=request_id, duration=round(duration, 3))
+            structlog.contextvars.unbind_contextvars("request_id")
+
             print(f"\n{messages[-1].content}\n")
 
 

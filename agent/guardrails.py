@@ -13,8 +13,11 @@ from __future__ import annotations
 
 import json
 
+import structlog
 from langchain_core.messages import AIMessage, ToolMessage
 from langgraph.types import interrupt
+
+log = structlog.get_logger("agent.guardrails")
 
 # ---------------------------------------------------------------------------
 # Policy configuration
@@ -105,6 +108,7 @@ def check_guardrails(state: dict) -> dict:
     # --- max steps -----------------------------------------------------------
     prior_calls = _count_tool_calls(messages)
     if prior_calls >= MAX_TOOL_CALLS:
+        log.warning("max_steps_reached", prior_calls=prior_calls, limit=MAX_TOOL_CALLS)
         return {
             "messages": [
                 _block_tool_call(
@@ -126,6 +130,7 @@ def check_guardrails(state: dict) -> dict:
 
         # 1. allowlist
         if name not in ALLOWED_TOOLS:
+            log.warning("tool_blocked_allowlist", tool=name)
             blocked.append(_block_tool_call(tc, f"Tool '{name}' is not allowed."))
             continue
 
@@ -133,6 +138,7 @@ def check_guardrails(state: dict) -> dict:
         param = PATH_TOOLS.get(name)
         if param and param in args:
             if not _path_is_safe(args[param]):
+                log.warning("tool_blocked_path", tool=name, path=args[param])
                 blocked.append(
                     _block_tool_call(
                         tc,
@@ -147,6 +153,7 @@ def check_guardrails(state: dict) -> dict:
             needs_confirmation.append(tc)
             continue
 
+        log.debug("tool_approved", tool=name)
         approved.append(tc)
 
     # --- handle confirmations ------------------------------------------------
@@ -160,8 +167,10 @@ def check_guardrails(state: dict) -> dict:
             }
         )
         if str(answer).lower() in ("y", "yes"):
+            log.info("tool_confirmed", tool=tc["name"])
             approved.append(tc)
         else:
+            log.info("tool_denied", tool=tc["name"])
             blocked.append(_block_tool_call(tc, "User denied this action."))
 
     # If every call was blocked, return the block messages so the LLM sees

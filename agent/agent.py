@@ -5,6 +5,7 @@ from langgraph.prebuilt import ToolNode, tools_condition
 
 from agent.config import settings
 from agent.guardrails import check_guardrails
+from agent.tracing import TracedToolNode, make_call_model
 
 
 def create_agent(tools: list = None):
@@ -16,9 +17,9 @@ def create_agent(tools: list = None):
     ).bind_tools(tools)
 
     graph = StateGraph(MessagesState)
-    graph.add_node("agent", lambda s: {"messages": [llm.invoke(s["messages"])]})
+    graph.add_node("agent", make_call_model(llm))
     graph.add_node("guardrails", check_guardrails)
-    graph.add_node("tools", ToolNode(tools))
+    graph.add_node("tools", TracedToolNode(ToolNode(tools)))
 
     graph.add_edge(START, "agent")
     graph.add_conditional_edges(
