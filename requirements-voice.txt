@@ -1,0 +1,5 @@
+faster-whisper>=1.1
+piper-tts>=1.2
+openwakeword>=0.6
+sounddevice>=0.5
+numpy>=1.26
