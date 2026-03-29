@@ -34,12 +34,30 @@ ALLOWED_TOOLS: set[str] = {
     "get_disk_usage",
     "get_memory_usage",
     "get_gpu_status",
+    # search
+    "web_search",
+    "web_search_news",
+    # weather
+    "get_current_weather",
+    "get_forecast",
+    # calendar
+    "get_upcoming_events",
+    "search_events",
+    "create_event",
+    # media
+    "play_music",
+    "pause_music",
+    "skip_track",
+    "stop_music",
+    "search_music",
+    "get_now_playing",
 }
 
 # Subset of ALLOWED_TOOLS that require explicit user confirmation before
 # execution (e.g. anything that mutates state).
 DESTRUCTIVE_TOOLS: set[str] = {
     "write_file",
+    "create_event",
 }
 
 # Filesystem tools whose first positional arg is a path — validated against

@@ -12,6 +12,10 @@ class Settings(BaseSettings):
     mcp_servers: dict[str, str] = Field(default_factory=lambda: {
         "filesystem": "http://filesystem:8001",
         "system": "http://system:8002",
+        "search": "http://search:8003",
+        "weather": "http://weather:8004",
+        "calendar": "http://calendar:8005",
+        "media": "http://media:8006",
     })
 
 
