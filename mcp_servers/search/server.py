@@ -1,14 +1,36 @@
-"""Search MCP server — web search via DuckDuckGo.
+"""Search MCP server — web search via SearXNG.
 
-No API key needed. Tools:
+Self-hosted metasearch (Google, Bing, DuckDuckGo, etc.). No API key needed.
+
+Tools:
   - web_search: general web search
   - web_search_news: recent news search
 """
 
-from fastmcp import FastMCP
-from duckduckgo_search import DDGS
+import os
 
-mcp = FastMCP("search", port=8003)
+from fastmcp import FastMCP
+import httpx
+
+mcp = FastMCP("search")
+
+_SEARXNG_URL = os.environ.get("SEARXNG_URL", "http://localhost:8080")
+
+
+def _search(query: str, categories: str = "general", max_results: int = 5) -> list[dict]:
+    """Query SearXNG and return results."""
+    resp = httpx.get(
+        f"{_SEARXNG_URL}/search",
+        params={
+            "q": query,
+            "format": "json",
+            "categories": categories,
+            "language": "en",
+        },
+        timeout=10,
+    )
+    resp.raise_for_status()
+    return resp.json().get("results", [])[:max_results]
 
 
 @mcp.tool()
@@ -23,17 +45,16 @@ def web_search(query: str, max_results: int = 5) -> str:
                Example: "current weather Madison WI" or "Python 3.13 release date"
         max_results: Number of results to return (1-10, default 5).
     """
-    with DDGS() as ddgs:
-        results = list(ddgs.text(query, max_results=max_results))
+    results = _search(query, categories="general", max_results=max_results)
 
     if not results:
         return "No results found."
 
     lines = []
     for r in results:
-        lines.append(f"**{r['title']}**")
-        lines.append(r.get("href", ""))
-        lines.append(r.get("body", ""))
+        lines.append(f"**{r.get('title', '')}**")
+        lines.append(r.get("url", ""))
+        lines.append(r.get("content", ""))
         lines.append("")
 
     return "\n".join(lines).strip()
@@ -51,17 +72,16 @@ def web_search_news(query: str, max_results: int = 5) -> str:
                Example: "AI regulation 2026" or "NBA playoffs"
         max_results: Number of results to return (1-10, default 5).
     """
-    with DDGS() as ddgs:
-        results = list(ddgs.news(query, max_results=max_results))
+    results = _search(query, categories="news", max_results=max_results)
 
     if not results:
         return "No news found."
 
     lines = []
     for r in results:
-        lines.append(f"**{r['title']}**")
-        lines.append(f"Source: {r.get('source', 'unknown')} | {r.get('date', '')}")
-        lines.append(r.get("body", ""))
+        lines.append(f"**{r.get('title', '')}**")
+        lines.append(f"Source: {r.get('engine', 'unknown')} | {r.get('publishedDate', '')}")
+        lines.append(r.get("content", ""))
         lines.append(r.get("url", ""))
         lines.append("")
 
@@ -69,4 +89,4 @@ def web_search_news(query: str, max_results: int = 5) -> str:
 
 
 if __name__ == "__main__":
-    mcp.run(transport="streamable-http")
+    mcp.run(transport="streamable-http", host="0.0.0.0", port=8003)

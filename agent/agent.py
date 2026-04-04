@@ -19,7 +19,7 @@ def create_agent(tools: list = None):
     graph = StateGraph(MessagesState)
     graph.add_node("agent", make_call_model(llm))
     graph.add_node("guardrails", check_guardrails)
-    graph.add_node("tools", TracedToolNode(ToolNode(tools)))
+    graph.add_node("tools", TracedToolNode(ToolNode(tools, handle_tool_errors=True)))
 
     graph.add_edge(START, "agent")
     graph.add_conditional_edges(

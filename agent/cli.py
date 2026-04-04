@@ -35,50 +35,50 @@ async def main():
     prompt_path = Path(settings.system_prompt_path)
     system_prompt = prompt_path.read_text(encoding="utf-8")
 
-    async with create_mcp_client() as client:
-        tools = client.get_tools()
-        log.info("tools_loaded", count=len(tools), names=[t.name for t in tools])
+    client = create_mcp_client()
+    tools = await client.get_tools()
+    log.info("tools_loaded", count=len(tools), names=[t.name for t in tools])
 
-        agent = create_agent(tools)
-        messages = [SystemMessage(content=system_prompt)]
+    agent = create_agent(tools)
+    messages = [SystemMessage(content=system_prompt)]
 
-        # Each conversation turn gets a unique thread_id so the checkpointer
-        # can track state for interrupt/resume.
-        thread_id = str(uuid.uuid4())
-        config = {"configurable": {"thread_id": thread_id}}
+    # Each conversation turn gets a unique thread_id so the checkpointer
+    # can track state for interrupt/resume.
+    thread_id = str(uuid.uuid4())
+    config = {"configurable": {"thread_id": thread_id}}
 
-        print("Argus ready. Type 'quit' to exit.\n")
-        while True:
-            try:
-                user_input = input("> ")
-            except (EOFError, KeyboardInterrupt):
-                break
+    print("Argus ready. Type 'quit' to exit.\n")
+    while True:
+        try:
+            user_input = input("> ")
+        except (EOFError, KeyboardInterrupt):
+            break
 
-            if user_input.strip().lower() in ("quit", "exit"):
-                break
-            if not user_input.strip():
-                continue
+        if user_input.strip().lower() in ("quit", "exit"):
+            break
+        if not user_input.strip():
+            continue
 
-            request_id = new_request_id()
-            structlog.contextvars.bind_contextvars(request_id=request_id)
-            t0 = time.monotonic()
+        request_id = new_request_id()
+        structlog.contextvars.bind_contextvars(request_id=request_id)
+        t0 = time.monotonic()
 
-            messages.append(HumanMessage(content=user_input))
-            result = await agent.ainvoke({"messages": messages}, config)
+        messages.append(HumanMessage(content=user_input))
+        result = await agent.ainvoke({"messages": messages}, config)
 
-            # Handle confirmation interrupts — the graph may pause multiple
-            # times if the LLM called several destructive tools.
-            while result.get("__interrupt__"):
-                commands = _handle_interrupts(result["__interrupt__"])
-                for cmd in commands:
-                    result = await agent.ainvoke(cmd, config)
+        # Handle confirmation interrupts — the graph may pause multiple
+        # times if the LLM called several destructive tools.
+        while result.get("__interrupt__"):
+            commands = _handle_interrupts(result["__interrupt__"])
+            for cmd in commands:
+                result = await agent.ainvoke(cmd, config)
 
-            messages = result["messages"]
-            duration = time.monotonic() - t0
-            log.info("turn_done", request_id=request_id, duration=round(duration, 3))
-            structlog.contextvars.unbind_contextvars("request_id")
+        messages = result["messages"]
+        duration = time.monotonic() - t0
+        log.info("turn_done", request_id=request_id, duration=round(duration, 3))
+        structlog.contextvars.unbind_contextvars("request_id")
 
-            print(f"\n{messages[-1].content}\n")
+        print(f"\n{messages[-1].content}\n")
 
 
 if __name__ == "__main__":

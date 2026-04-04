@@ -23,7 +23,7 @@ def listen_for_wakeword(on_wake: Callable[[], None]) -> None:
     chunk_samples = int(vs.sample_rate * vs.audio_chunk_ms / 1000)
 
     log.info("wakeword_loading", model=vs.wakeword_model)
-    oww = OWWModel(wakeword_models=[vs.wakeword_model])
+    oww = OWWModel(wakeword_models=[vs.wakeword_model], inference_framework="onnx")
     log.info("wakeword_ready", threshold=vs.wakeword_threshold)
 
     with sd.InputStream(

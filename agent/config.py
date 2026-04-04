@@ -10,12 +10,12 @@ class Settings(BaseSettings):
     system_prompt_path: str = "docs/system_prompt.md"
     max_steps: int = 10
     mcp_servers: dict[str, str] = Field(default_factory=lambda: {
-        "filesystem": "http://filesystem:8001",
-        "system": "http://system:8002",
-        "search": "http://search:8003",
-        "weather": "http://weather:8004",
-        "calendar": "http://calendar:8005",
-        "media": "http://media:8006",
+        # "filesystem": "http://localhost:8001",
+        # "system": "http://localhost:8002",
+        "search": "http://localhost:8003",
+        "weather": "http://localhost:8004",
+        # "calendar": "http://localhost:8005",
+        # "media": "http://localhost:8006",
     })
 
 

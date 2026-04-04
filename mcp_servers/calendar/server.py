@@ -19,7 +19,7 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 
-mcp = FastMCP("calendar", port=8005)
+mcp = FastMCP("calendar")
 
 _SCOPES = ["https://www.googleapis.com/auth/calendar"]
 _TOKEN_PATH = Path("/data/calendar_token.json")
@@ -188,4 +188,4 @@ def create_event(
 
 
 if __name__ == "__main__":
-    mcp.run(transport="streamable-http")
+    mcp.run(transport="streamable-http", host="0.0.0.0", port=8005)

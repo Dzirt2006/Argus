@@ -10,7 +10,7 @@ Tools:
 from fastmcp import FastMCP
 import httpx
 
-mcp = FastMCP("weather", port=8004)
+mcp = FastMCP("weather")
 
 _GEOCODE_URL = "https://geocoding-api.open-meteo.com/v1/search"
 _WEATHER_URL = "https://api.open-meteo.com/v1/forecast"
@@ -19,17 +19,21 @@ _WEATHER_URL = "https://api.open-meteo.com/v1/forecast"
 def _geocode(city: str) -> tuple[float, float, str]:
     """Resolve a city name to (latitude, longitude, display_name).
 
+    Tries the full query first, then just the city name before any comma.
     Raises ValueError if the city is not found.
     """
-    resp = httpx.get(_GEOCODE_URL, params={"name": city, "count": 1})
-    resp.raise_for_status()
-    data = resp.json()
-    results = data.get("results")
-    if not results:
-        raise ValueError(f"Could not find city: {city}")
-    r = results[0]
-    name = f"{r['name']}, {r.get('admin1', '')}, {r.get('country', '')}".strip(", ")
-    return r["latitude"], r["longitude"], name
+    # Normalize: strip, remove hyphens, try full query then city-only
+    normalized = city.strip().replace("-", " ")
+    city_only = normalized.split(",")[0].strip()
+    for query in dict.fromkeys([normalized, city_only]):
+        resp = httpx.get(_GEOCODE_URL, params={"name": query, "count": 5})
+        resp.raise_for_status()
+        results = resp.json().get("results")
+        if results:
+            r = results[0]
+            name = f"{r['name']}, {r.get('admin1', '')}, {r.get('country', '')}".strip(", ")
+            return r["latitude"], r["longitude"], name
+    raise ValueError(f"Could not find city: {city}")
 
 
 @mcp.tool()
@@ -127,4 +131,4 @@ def _weather_code_to_text(code: int) -> str:
 
 
 if __name__ == "__main__":
-    mcp.run(transport="streamable-http")
+    mcp.run(transport="streamable-http", host="0.0.0.0", port=8004)

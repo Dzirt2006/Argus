@@ -90,9 +90,7 @@ class TracedToolNode:
         self._inner = tool_node
         self._log = structlog.get_logger("agent.tools")
 
-    def __call__(self, state: dict, config=None) -> dict:
-        from langchain_core.messages import AIMessage
-
+    async def __call__(self, state: dict, config=None) -> dict:
         last = state["messages"][-1]
         tool_names = [
             tc["name"]
@@ -104,9 +102,9 @@ class TracedToolNode:
         t0 = time.monotonic()
 
         if config is not None:
-            result = self._inner(state, config)
+            result = await self._inner.ainvoke(state, config)
         else:
-            result = self._inner(state)
+            result = await self._inner.ainvoke(state)
 
         duration = time.monotonic() - t0
 
