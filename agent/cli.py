@@ -8,7 +8,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.types import Command
 
 from agent.agent import create_agent
-from agent.config import settings
+from agent.config import settings, wait_for_vllm
 from agent.mcp import create_mcp_client
 from agent.tracing import setup_logging, new_request_id
 
@@ -32,6 +32,8 @@ def _handle_interrupts(interrupts: list) -> list[Command]:
 
 
 async def main():
+    model_name = wait_for_vllm()
+
     prompt_path = Path(settings.system_prompt_path)
     system_prompt = prompt_path.read_text(encoding="utf-8")
 
@@ -39,7 +41,7 @@ async def main():
     tools = await client.get_tools()
     log.info("tools_loaded", count=len(tools), names=[t.name for t in tools])
 
-    agent = create_agent(tools)
+    agent = create_agent(tools, model_name=model_name)
     messages = [SystemMessage(content=system_prompt)]
 
     # Each conversation turn gets a unique thread_id so the checkpointer

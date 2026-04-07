@@ -36,9 +36,9 @@ def listen_for_wakeword(on_wake: Callable[[], None]) -> None:
             data, _ = stream.read(chunk_samples)
             audio = data[:, 0] if data.ndim > 1 else data.flatten()
 
-            oww.predict(audio)
+            scores = oww.predict(audio)
 
-            for name, score in oww.get_prediction().items():
+            for name, score in scores.items():
                 if score >= vs.wakeword_threshold:
                     log.info("wakeword_detected", model=name, score=round(score, 3))
                     oww.reset()

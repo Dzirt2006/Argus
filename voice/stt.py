@@ -38,6 +38,11 @@ def _get_model() -> WhisperModel:
     return _model
 
 
+def warm_up() -> None:
+    """Pre-load the Whisper model so the first turn isn't slow."""
+    _get_model()
+
+
 def transcribe(audio: np.ndarray) -> str:
     """Transcribe a float32 numpy array (16kHz mono) to text.
 

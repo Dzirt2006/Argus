@@ -8,10 +8,10 @@ from agent.guardrails import check_guardrails
 from agent.tracing import TracedToolNode, make_call_model
 
 
-def create_agent(tools: list = None):
+def create_agent(tools: list = None, model_name: str = ""):
     tools = tools or []
     llm = ChatOpenAI(
-        model=settings.model_name,
+        model=model_name or settings.model_name,
         base_url=settings.vllm_url,
         api_key="not-needed",
     ).bind_tools(tools)

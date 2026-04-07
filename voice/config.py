@@ -4,12 +4,16 @@ Change ``whisper_device`` to ``cuda`` to move STT to GPU.
 Adjust ``whisper_model`` for speed/accuracy tradeoff.
 """
 
+from pathlib import Path
+
 from pydantic import Field
 from pydantic_settings import BaseSettings
 
+_ENV_FILE = Path(__file__).resolve().parent.parent / ".env"
+
 
 class VoiceSettings(BaseSettings):
-    model_config = {"env_prefix": "VOICE_", "env_file": ".env", "env_file_encoding": "utf-8"}
+    model_config = {"env_prefix": "VOICE_", "env_file": str(_ENV_FILE), "env_file_encoding": "utf-8", "extra": "ignore"}
 
     # -- STT (faster-whisper) -------------------------------------------------
     whisper_model: str = "small"          # tiny | small | medium | large-v3
