@@ -1,0 +1,77 @@
+# =============================================================================
+# Wake Word Training Configuration
+# =============================================================================
+
+# Wake phrase to train
+wake_phrase: "hey argus"
+
+# Audio format (all recordings and generated samples must match)
+audio:
+  sample_rate: 16000
+  channels: 1              # mono
+  format: "wav"
+  bit_depth: 16
+  max_duration_sec: 3.0    # max length per sample
+  min_duration_sec: 0.5    # discard shorter clips
+
+# Directory layout
+paths:
+  base_dir: "rnd/wakeword"
+  dataset_dir: "rnd/wakeword/data"
+  positive_dir: "rnd/wakeword/data/positive"
+  negative_dir: "rnd/wakeword/data/negative"
+  synthetic_dir: "rnd/wakeword/data/synthetic"
+  augmented_dir: "rnd/wakeword/data/augmented"
+  external_dir: "rnd/wakeword/data/external"    # imported from other devices
+  noise_dir: "rnd/wakeword/data/noise"           # background noise for augmentation
+  rir_dir: "rnd/wakeword/data/rir"               # room impulse responses
+  features_dir: "rnd/wakeword/data/features"
+  models_dir: "rnd/wakeword/models"
+
+# Recording settings
+recording:
+  silence_threshold: 0.02   # RMS threshold for silence detection
+  silence_duration: 1.0     # seconds of silence before auto-stop
+  countdown_sec: 3          # countdown before each recording
+  pause_between_sec: 1.5    # pause between consecutive recordings
+
+# Synthetic generation (Piper TTS)
+synthetic:
+  model: "en_US-libritts_r-medium"   # multi-speaker model (904 speakers)
+  num_samples: 10000
+  speaker_ids: null                   # null = use all available speakers
+  speed_range: [0.8, 1.2]            # speed variation range
+
+# External import / normalization
+import:
+  target_sample_rate: 16000
+  target_channels: 1
+  trim_silence: true
+  trim_threshold_db: -40     # silence threshold for trimming
+  normalize_volume: true
+  target_peak_db: -3.0       # normalize peak to this level
+
+# Augmentation
+augmentation:
+  num_augmented_per_sample: 5  # how many augmented versions per original
+  noise_snr_range: [5, 15]     # signal-to-noise ratio in dB
+  rir_probability: 0.5         # chance of applying room impulse response
+  speed_range: [0.85, 1.15]
+  volume_range: [-6, 6]        # dB variation
+  pitch_shift_range: [-2, 2]   # semitones
+
+# Negative dataset downloads
+negatives:
+  common_voice_lang: "en"       # Mozilla Common Voice language
+  max_negative_hours: 50        # cap on negative data
+  ambient_sources:
+    - "free_music_archive"
+    - "musan_noise"
+    - "musan_music"
+
+# Training (see training/config.yaml for full training hyperparameters)
+training:
+  positive_weight: 1.0          # weight for synthetic positives
+  real_positive_weight: 3.0     # weight for real recorded positives
+  validation_split: 0.15
+  test_split: 0.10

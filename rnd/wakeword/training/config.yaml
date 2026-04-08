@@ -1,0 +1,52 @@
+# =============================================================================
+# Wake Word Training Hyperparameters
+# =============================================================================
+
+# Model architecture
+model:
+  type: "dnn"              # "dnn" or "rnn"
+  hidden_dim: 64           # hidden layer size (32=fast, 64=balanced, 128=accurate)
+  num_layers: 3            # number of hidden layers
+  dropout: 0.2
+  activation: "relu"
+
+# OpenWakeWord embedding model (frozen feature extractor)
+embeddings:
+  # These are downloaded automatically by openwakeword
+  melspectrogram_model: "melspectrogram.onnx"
+  embedding_model: "embedding_model.onnx"
+  # Each audio frame produces a 96-dim embedding (default for OWW)
+  embedding_dim: 96
+  # Number of consecutive frames to use as input
+  num_frames: 16           # ~1.28 seconds of context at 80ms per frame
+
+# Training
+training:
+  epochs: 100
+  batch_size: 512
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  lr_scheduler: "cosine"   # "cosine" or "step"
+  lr_step_size: 30
+  lr_gamma: 0.5
+  early_stopping_patience: 10
+  early_stopping_min_delta: 0.001
+
+# Data splits
+data:
+  validation_split: 0.15
+  test_split: 0.10
+  shuffle: true
+  seed: 42
+
+# Class weights (to handle positive/negative imbalance)
+weights:
+  synthetic_positive: 1.0
+  real_positive: 3.0       # real recordings weighted 3x
+  negative: 1.0
+
+# Evaluation thresholds
+evaluation:
+  thresholds: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+  target_false_accept_rate: 0.01   # 1 false wake per 100 negative samples
+  target_false_reject_rate: 0.05   # miss 5% of real wake words
