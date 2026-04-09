@@ -48,15 +48,31 @@ def new_request_id() -> str:
 # Traced call_model — replaces the inline lambda in agent.py
 # ---------------------------------------------------------------------------
 
-def make_call_model(llm):
-    """Return a traced call_model function bound to the given LLM."""
+def make_call_model(llm_fast, llm_think=None):
+    """Return a traced call_model function that routes between fast/thinking LLMs.
+
+    If llm_think is None, all requests use llm_fast (thinking disabled).
+    """
+    from agent.thinking import should_think
+
     log = structlog.get_logger("agent.llm")
 
     def call_model(state: dict) -> dict:
         messages = state["messages"]
         request_id = structlog.contextvars.get_contextvars().get("request_id", "?")
 
-        log.info("llm_call_start", request_id=request_id, input_messages=len(messages))
+        # Find the last human message to classify.
+        user_text = ""
+        for msg in reversed(messages):
+            if getattr(msg, "type", None) == "human":
+                user_text = msg.content
+                break
+
+        thinking = llm_think is not None and should_think(user_text)
+        llm = llm_think if thinking else llm_fast
+
+        log.info("llm_call_start", request_id=request_id,
+                 input_messages=len(messages), thinking=thinking)
         t0 = time.monotonic()
         response = llm.invoke(messages)
         duration = time.monotonic() - t0

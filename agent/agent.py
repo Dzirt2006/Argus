@@ -10,14 +10,24 @@ from agent.tracing import TracedToolNode, make_call_model
 
 def create_agent(tools: list = None, model_name: str = ""):
     tools = tools or []
-    llm = ChatOpenAI(
-        model=model_name or settings.model_name,
+    model = model_name or settings.model_name
+
+    llm_fast = ChatOpenAI(
+        model=model,
         base_url=settings.vllm_url,
         api_key="not-needed",
+        extra_body={"chat_template_kwargs": {"enable_thinking": False}},
+    ).bind_tools(tools)
+
+    llm_think = ChatOpenAI(
+        model=model,
+        base_url=settings.vllm_url,
+        api_key="not-needed",
+        extra_body={"chat_template_kwargs": {"enable_thinking": True}},
     ).bind_tools(tools)
 
     graph = StateGraph(MessagesState)
-    graph.add_node("agent", make_call_model(llm))
+    graph.add_node("agent", make_call_model(llm_fast, llm_think))
     graph.add_node("guardrails", check_guardrails)
     graph.add_node("tools", TracedToolNode(ToolNode(tools, handle_tool_errors=True)))
 
