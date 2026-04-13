@@ -106,5 +106,14 @@ services:
     depends_on:
       - searxng
 
+  homeassistant:
+    image: ghcr.io/home-assistant/home-assistant:stable
+    network_mode: host
+    volumes:
+      - ./ha_config:/config
+    environment:
+      - TZ=America/Chicago
+    restart: unless-stopped
+
 volumes:
   huggingface-cache:
