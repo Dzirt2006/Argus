@@ -51,6 +51,27 @@ ALLOWED_TOOLS: set[str] = {
     "stop_music",
     "search_music",
     "get_now_playing",
+    # home assistant (via HA's built-in MCP server)
+    "HassTurnOn",
+    "HassTurnOff",
+    "HassLightSet",
+    "HassCancelAllTimers",
+    "HassMediaPause",
+    "HassMediaUnpause",
+    "HassMediaNext",
+    "HassMediaPrevious",
+    "HassSetVolume",
+    "HassSetVolumeRelative",
+    "HassMediaPlayerMute",
+    "HassMediaPlayerUnmute",
+    "HassMediaSearchAndPlay",
+    "HassBroadcast",
+    "HassListAddItem",
+    "HassListCompleteItem",
+    "HassListRemoveItem",
+    "GetDateTime",
+    "GetLiveContext",
+    "todo_get_items",
 }
 
 # Subset of ALLOWED_TOOLS that require explicit user confirmation before

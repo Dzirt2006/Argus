@@ -19,6 +19,8 @@ class Settings(BaseSettings):
     system_prompt_path: str = "docs/system_prompt.md"
     max_steps: int = 10
     vllm_timeout: int = 300  # seconds to wait for vLLM to come up
+    ha_url: str = ""
+    ha_token: str = ""
     mcp_servers: dict[str, str] = Field(default_factory=lambda: {
         # "filesystem": "http://localhost:8001",
         # "system": "http://localhost:8002",
@@ -26,6 +28,7 @@ class Settings(BaseSettings):
         # "weather": "http://localhost:8004",
         # "calendar": "http://localhost:8005",
         # "media": "http://localhost:8006",
+
     })
 
 
