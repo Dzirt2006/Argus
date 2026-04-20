@@ -33,12 +33,12 @@ class VoiceSettings(BaseSettings):
     wakeword_threshold: float = 0.5       # 0.0-1.0, higher = fewer false positives
 
     # -- Audio ----------------------------------------------------------------
-    sample_rate: int = 16000              # 16kHz for Whisper and OpenWakeWord
+    sample_rate: int = 16000              # 16kHz for Whisper, OpenWakeWord, Silero-VAD
     channels: int = 1
     audio_chunk_ms: int = 80              # chunk size for wake word processing
-    silence_threshold: float = 0.02       # RMS below this = silence
-    silence_duration: float = 1.2         # seconds of silence before stopping recording
-    max_record_seconds: float = 15.0      # hard cap on recording length
+    vad_threshold: float = 0.5            # silero-vad speech probability cutoff
+    silence_duration: float = 0.5         # seconds of non-speech before stopping recording
+    max_record_seconds: float = 7.0       # hard cap on recording length
 
 
 voice_settings = VoiceSettings()

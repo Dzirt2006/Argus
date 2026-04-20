@@ -10,3 +10,4 @@ tqdm>=4
 requests>=2
 sounddevice>=0.5
 numpy>=1.26
+silero-vad>=5.1

@@ -16,7 +16,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.types import Command
 
 from agent.tracing import setup_logging, new_request_id
-from voice.audio import play_audio, record_until_silence
+from voice.audio import play_audio, record_until_silence, warm_up as warm_up_vad
 from voice.config import voice_settings
 from voice.stt import transcribe, warm_up as warm_up_stt
 from voice.tts import synthesize
@@ -48,7 +48,9 @@ class VoicePipeline:
         """Start the wake word listener. Blocks forever."""
         print("Loading Whisper model (one-time)...")
         warm_up_stt()
-        print("Whisper ready.\n")
+        print("Whisper ready.")
+        warm_up_vad()
+        print("VAD ready.\n")
 
         log.info("pipeline_start", wakeword=voice_settings.wakeword_model)
         print(f"👂 Listening for wake word (\"{voice_settings.wakeword_model}\")...\n")

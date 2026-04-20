@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     mcp_servers: dict[str, str] = Field(default_factory=lambda: {
         # "filesystem": "http://localhost:8001",
         # "system": "http://localhost:8002",
-        "search": "http://localhost:8003",
+        # "search": "http://localhost:8003",
         # "weather": "http://localhost:8004",
         # "calendar": "http://localhost:8005",
         # "media": "http://localhost:8006",
