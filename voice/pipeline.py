@@ -31,13 +31,17 @@ def _is_question(text: str) -> bool:
     return text.rstrip().endswith("?") if text else False
 
 
-def _make_beep() -> tuple[np.ndarray, int]:
-    """Generate a short beep tone to signal 'start speaking'."""
-    sr = 16000
-    duration = 0.15
-    t = np.linspace(0, duration, int(sr * duration), dtype=np.float32)
-    tone = 0.3 * np.sin(2 * np.pi * 880 * t)
-    return tone, sr
+_TONE_SR = 16000
+
+
+def _make_tone(freq: float, duration: float, amplitude: float = 0.3) -> np.ndarray:
+    t = np.linspace(0, duration, int(_TONE_SR * duration), dtype=np.float32)
+    return amplitude * np.sin(2 * np.pi * freq * t).astype(np.float32)
+
+
+def _make_error_tone() -> np.ndarray:
+    """Descending two-tone buzz to signal failure."""
+    return np.concatenate([_make_tone(440, 0.12), _make_tone(220, 0.18)])
 
 
 class VoicePipeline:
@@ -47,7 +51,12 @@ class VoicePipeline:
         self.agent = agent
         self.config = config
         self.messages = messages
-        self._beep, self._beep_sr = _make_beep()
+        self._start_tone = _make_tone(880, 0.15)
+        self._end_tone = _make_tone(660, 0.12)
+        self._error_tone = _make_error_tone()
+
+    def _play_tone(self, tone: np.ndarray) -> None:
+        play_audio(tone, sample_rate=_TONE_SR)
 
     def run(self) -> None:
         """Start the wake word listener. Blocks forever."""
@@ -78,7 +87,7 @@ class VoicePipeline:
                 print("🎤 Recording follow-up... (speak now)")
             else:
                 print("🎤 Recording... (speak now)")
-            play_audio(self._beep, sample_rate=self._beep_sr)
+            self._play_tone(self._start_tone)
             start_timeout = voice_settings.followup_start_timeout if followup else None
             audio = record_until_silence(start_timeout=start_timeout)
 
@@ -93,13 +102,16 @@ class VoicePipeline:
             if len(audio) < voice_settings.sample_rate * 0.3:
                 print("⚠  Too short, ignoring.")
                 log.info("recording_too_short", request_id=request_id)
+                self._play_tone(self._error_tone)
                 break
 
+            self._play_tone(self._end_tone)
             print("📝 Transcribing...")
             text = transcribe(audio)
             if not text:
                 print("⚠  Could not transcribe, ignoring.")
                 log.info("stt_empty", request_id=request_id)
+                self._play_tone(self._error_tone)
                 break
 
             log.info("user_said", request_id=request_id, text=text, followup=followup)
