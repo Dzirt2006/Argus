@@ -39,6 +39,8 @@ class VoiceSettings(BaseSettings):
     vad_threshold: float = 0.5            # silero-vad speech probability cutoff
     silence_duration: float = 0.5         # seconds of non-speech before stopping recording
     max_record_seconds: float = 7.0       # hard cap on recording length
+    followup_start_timeout: float = 5.0   # seconds to wait for user to start speaking in follow-up mode
+    max_followup_turns: int = 5           # cap on consecutive follow-up turns before falling back to wake word
 
 
 voice_settings = VoiceSettings()

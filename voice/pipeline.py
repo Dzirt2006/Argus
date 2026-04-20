@@ -26,6 +26,11 @@ setup_logging()
 log = structlog.get_logger("voice.pipeline")
 
 
+def _is_question(text: str) -> bool:
+    """Heuristic: treat a trailing '?' as 'agent wants a reply'."""
+    return text.rstrip().endswith("?") if text else False
+
+
 def _make_beep() -> tuple[np.ndarray, int]:
     """Generate a short beep tone to signal 'start speaking'."""
     sr = 16000
@@ -61,53 +66,73 @@ class VoicePipeline:
         asyncio.run(self._handle_turn())
 
     async def _handle_turn(self) -> None:
-        """Record → transcribe → agent → speak."""
+        """Record → transcribe → agent → speak, looping while agent asks follow-ups."""
         request_id = new_request_id()
         structlog.contextvars.bind_contextvars(request_id=request_id)
         t0 = time.monotonic()
 
-        # --- STT ---
-        print("🎤 Recording... (speak now)")
-        play_audio(self._beep, sample_rate=self._beep_sr)
-        audio = record_until_silence()
-        duration_sec = round(len(audio) / voice_settings.sample_rate, 1)
-        print(f"🎤 Recorded {duration_sec}s of audio")
+        followup = False
+        for turn_idx in range(voice_settings.max_followup_turns + 1):
+            # --- STT ---
+            if followup:
+                print("🎤 Recording follow-up... (speak now)")
+            else:
+                print("🎤 Recording... (speak now)")
+            play_audio(self._beep, sample_rate=self._beep_sr)
+            start_timeout = voice_settings.followup_start_timeout if followup else None
+            audio = record_until_silence(start_timeout=start_timeout)
 
-        if len(audio) < voice_settings.sample_rate * 0.3:
-            print("⚠  Too short, ignoring.")
-            log.info("recording_too_short", request_id=request_id)
-            structlog.contextvars.unbind_contextvars("request_id")
-            return
+            if len(audio) == 0 and followup:
+                print("⚠  No follow-up heard, back to wake word.")
+                log.info("followup_timeout", request_id=request_id)
+                break
 
-        print("📝 Transcribing...")
-        text = transcribe(audio)
-        if not text:
-            print("⚠  Could not transcribe, ignoring.")
-            log.info("stt_empty", request_id=request_id)
-            structlog.contextvars.unbind_contextvars("request_id")
-            return
+            duration_sec = round(len(audio) / voice_settings.sample_rate, 1)
+            print(f"🎤 Recorded {duration_sec}s of audio")
 
-        log.info("user_said", request_id=request_id, text=text)
-        print(f"👤 You said: \"{text}\"")
+            if len(audio) < voice_settings.sample_rate * 0.3:
+                print("⚠  Too short, ignoring.")
+                log.info("recording_too_short", request_id=request_id)
+                break
 
-        # --- Agent ---
-        print("🤖 Thinking...")
-        self.messages.append(HumanMessage(content=text))
-        result = await self.agent.ainvoke({"messages": self.messages}, self.config)
+            print("📝 Transcribing...")
+            text = transcribe(audio)
+            if not text:
+                print("⚠  Could not transcribe, ignoring.")
+                log.info("stt_empty", request_id=request_id)
+                break
 
-        # Handle confirmation interrupts via voice
-        while result.get("__interrupt__"):
-            result = await self._handle_voice_confirm(result)
+            log.info("user_said", request_id=request_id, text=text, followup=followup)
+            print(f"👤 You said: \"{text}\"")
 
-        self.messages = result["messages"]
-        response_text = self.messages[-1].content
-        log.info("agent_response", request_id=request_id, text_length=len(response_text))
-        print(f"🤖 Argus: {response_text}")
+            # --- Agent ---
+            print("🤖 Thinking...")
+            self.messages.append(HumanMessage(content=text))
+            result = await self.agent.ainvoke({"messages": self.messages}, self.config)
 
-        # --- TTS ---
-        print("🔊 Speaking...")
-        response_audio, sr = synthesize(response_text)
-        play_audio(response_audio, sample_rate=sr)
+            # Handle confirmation interrupts via voice
+            while result.get("__interrupt__"):
+                result = await self._handle_voice_confirm(result)
+
+            self.messages = result["messages"]
+            response_text = self.messages[-1].content
+            log.info("agent_response", request_id=request_id, text_length=len(response_text))
+            print(f"🤖 Argus: {response_text}")
+
+            # --- TTS ---
+            print("🔊 Speaking...")
+            response_audio, sr = synthesize(response_text)
+            play_audio(response_audio, sample_rate=sr)
+
+            if not _is_question(response_text):
+                break
+
+            if turn_idx >= voice_settings.max_followup_turns:
+                log.info("followup_max_reached", request_id=request_id)
+                break
+
+            followup = True
+            log.info("followup_continue", request_id=request_id)
 
         duration = time.monotonic() - t0
         log.info("turn_done", request_id=request_id, duration=round(duration, 3))

@@ -32,21 +32,28 @@ def warm_up() -> None:
     _get_vad()
 
 
-def record_until_silence() -> np.ndarray:
+def record_until_silence(start_timeout: float | None = None) -> np.ndarray:
     """Record from the default mic until the user stops speaking.
 
     Uses silero-vad to detect speech vs. non-speech per 32ms frame. Stops when
     non-speech exceeds ``silence_duration`` after speech has started, or when
     ``max_record_seconds`` is reached.
+
+    If ``start_timeout`` is given and no speech begins within that many seconds,
+    returns an empty array so the caller can bail out.
     """
     vad = _get_vad()
     sr = vs.sample_rate
     max_frames = int(vs.max_record_seconds * sr / _VAD_FRAME_SAMPLES)
     silence_frames_needed = int(vs.silence_duration * sr / _VAD_FRAME_SAMPLES)
+    start_timeout_frames = (
+        int(start_timeout * sr / _VAD_FRAME_SAMPLES) if start_timeout is not None else None
+    )
 
     chunks: list[np.ndarray] = []
     silence_count = 0
     speech_started = False
+    frames_seen = 0
 
     log.debug("recording_start")
 
@@ -60,6 +67,7 @@ def record_until_silence() -> np.ndarray:
             data, _ = stream.read(_VAD_FRAME_SAMPLES)
             audio = data[:, 0] if data.ndim > 1 else data.flatten()
             chunks.append(audio)
+            frames_seen += 1
 
             prob = vad(torch.from_numpy(audio), sr).item()
 
@@ -70,6 +78,9 @@ def record_until_silence() -> np.ndarray:
                 silence_count += 1
                 if silence_count >= silence_frames_needed:
                     break
+            elif start_timeout_frames is not None and frames_seen >= start_timeout_frames:
+                log.debug("recording_start_timeout")
+                return np.array([], dtype=np.float32)
 
     recording = np.concatenate(chunks) if chunks else np.array([], dtype=np.float32)
     log.debug("recording_done", duration=round(len(recording) / sr, 2))
