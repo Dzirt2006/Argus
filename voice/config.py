@@ -22,6 +22,14 @@ class VoiceSettings(BaseSettings):
     whisper_language: str = "en"
     whisper_beam_size: int = 1            # 1 = greedy (fastest), 5 = beam search
 
+    # -- TTS engine selector --------------------------------------------------
+    tts_engine: str = "kokoro"            # kokoro | piper
+
+    # -- TTS (kokoro) ---------------------------------------------------------
+    kokoro_voice: str = "af_heart"        # af_heart, af_bella, af_nicole, am_michael, am_onyx, bf_emma, ...
+    kokoro_speed: float = 1.0             # < 1.0 = slower, > 1.0 = faster
+    kokoro_lang: str = "en-us"            # en-us, en-gb, ja, zh, es, fr, hi, it, pt-br
+
     # -- TTS (piper) ----------------------------------------------------------
     piper_model: str = "en_US-lessac-medium"
     piper_speaker_id: int | None = None

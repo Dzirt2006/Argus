@@ -1,5 +1,6 @@
 faster-whisper>=1.1
 piper-tts>=1.2
+kokoro-onnx>=0.4
 # openwakeword pulls tflite-runtime which has no Python 3.12+ wheels.
 # Install openwakeword with: pip install --no-deps openwakeword>=0.6
 # The remaining deps (onnxruntime, scipy, etc.) are listed below.
