@@ -48,11 +48,33 @@ def new_request_id() -> str:
 # Traced call_model — replaces the inline lambda in agent.py
 # ---------------------------------------------------------------------------
 
+
+def _with_memory_block(messages: list, memory_block: str) -> list:
+    """Return a new message list with memory appended to the first SystemMessage.
+
+    Does not mutate `state['messages']` — LangGraph's checkpointer relies on
+    message identity for interrupt/resume.
+    """
+    from langchain_core.messages import SystemMessage
+
+    out = list(messages)
+    for i, m in enumerate(out):
+        if isinstance(m, SystemMessage):
+            out[i] = SystemMessage(content=m.content + memory_block)
+            return out
+    out.insert(0, SystemMessage(content=memory_block.lstrip()))
+    return out
+
+
+
 def make_call_model(llm_fast, llm_think=None):
     """Return a traced call_model function that routes between fast/thinking LLMs.
 
     If llm_think is None, all requests use llm_fast (thinking disabled).
     """
+    from agent.config import settings
+    from agent.memory import get_store
+    from agent.memory_classifier import should_retrieve
     from agent.thinking import should_think
 
     log = structlog.get_logger("agent.llm")
@@ -71,8 +93,32 @@ def make_call_model(llm_fast, llm_think=None):
         thinking = llm_think is not None and should_think(user_text)
         llm = llm_think if thinking else llm_fast
 
+        # Memory injection: facts always (when enabled), summaries only when
+        # the classifier sees a reference to past/personal state.
+        retrieve_vector = False
+        memory_block = ""
+        if settings.memory_enabled:
+            store = get_store()
+            facts = store.list_facts()
+            hits = []
+            retrieve_vector = should_retrieve(user_text)
+            if retrieve_vector:
+                hits = store.retrieve(user_text)
+            if facts or hits:
+                parts = []
+                if facts:
+                    parts.append("## Known facts")
+                    parts.extend(f"- {k}: {v}" for k, v, _src in facts)
+                if hits:
+                    parts.append("## Relevant past context")
+                    parts.extend(f"- {h.text}" for h in hits)
+                memory_block = "\n\n" + "\n".join(parts)
+                messages = _with_memory_block(messages, memory_block)
+
         log.info("llm_call_start", request_id=request_id,
-                 input_messages=len(messages), thinking=thinking)
+                 input_messages=len(messages), thinking=thinking,
+                 memory_retrieved=retrieve_vector,
+                 memory_block_chars=len(memory_block) or None)
         t0 = time.monotonic()
         response = llm.invoke(messages)
         duration = time.monotonic() - t0

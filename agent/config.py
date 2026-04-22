@@ -28,8 +28,21 @@ class Settings(BaseSettings):
         # "weather": "http://localhost:8004",
         # "calendar": "http://localhost:8005",
         # "media": "http://localhost:8006",
+        # "memory": "http://localhost:8007",
 
     })
+
+    memory_enabled: bool = False
+    memory_sqlite_path: str = "/data/memory.db"
+    memory_qdrant_url: str = "http://qdrant:6333"
+    memory_qdrant_collection: str = "argus_summaries"
+    memory_embed_model: str = "nomic-ai/nomic-embed-text-v1.5"
+    memory_embed_device: str = "cpu"  # cpu | cuda
+    memory_rerank_model: str = ""     # empty = no rerank; e.g. "Qwen/Qwen3-Reranker-0.6B"
+    memory_rerank_device: str = "cpu"
+    memory_top_k: int = 3
+    memory_rerank_candidates: int = 15
+    memory_summary_min_turns: int = 2  # skip summarizing very short sessions
 
 
 settings = Settings()

@@ -15,6 +15,7 @@ import structlog
 from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.types import Command
 
+from agent.summarizer import summarize_and_store
 from agent.tracing import setup_logging, new_request_id
 from voice.audio import play_audio, record_until_silence, warm_up as warm_up_vad
 from voice.config import voice_settings
@@ -80,6 +81,7 @@ class VoicePipeline:
         structlog.contextvars.bind_contextvars(request_id=request_id)
         t0 = time.monotonic()
 
+        session_start_idx = len(self.messages)
         followup = False
         for turn_idx in range(voice_settings.max_followup_turns + 1):
             # --- STT ---
@@ -148,6 +150,14 @@ class VoicePipeline:
 
         duration = time.monotonic() - t0
         log.info("turn_done", request_id=request_id, duration=round(duration, 3))
+
+        session_messages = self.messages[session_start_idx:]
+        if session_messages:
+            try:
+                summarize_and_store(session_messages, session_id=request_id)
+            except Exception as e:
+                log.warning("summary_failed", error=str(e))
+
         structlog.contextvars.unbind_contextvars("request_id")
         print(f"✅ Turn done ({round(duration, 1)}s)\n")
         print("👂 Listening for wake word...\n")

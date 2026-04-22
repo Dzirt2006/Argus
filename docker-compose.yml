@@ -114,5 +114,24 @@ services:
       - TZ=America/Chicago
     restart: unless-stopped
 
+  qdrant:
+    image: qdrant/qdrant:latest
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant-storage:/qdrant/storage
+    restart: unless-stopped
+
+  memory:
+    build:
+      context: .
+      dockerfile: mcp_servers/memory/Dockerfile
+    ports:
+      - "8007:8007"
+    volumes:
+      - ./data:/data
+
 volumes:
   huggingface-cache:
+  qdrant-storage:
