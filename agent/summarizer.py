@@ -30,12 +30,38 @@ ONLY what would help the assistant in a future, unrelated conversation:
 - Entities named (people, places, devices) worth remembering.
 - Outcomes of actions taken.
 
+STRICT RULES:
+- Copy specific values (numbers, units, names, dates) VERBATIM from the
+  transcript. Never paraphrase or convert quantities (e.g. "almost two
+  meters" stays as "almost two meters", never "98 cm").
+- Do not infer or assume attributes the user did not explicitly state.
+- If unsure of a value, omit it rather than guess.
+
 Do NOT include:
 - Small talk, greetings, transient details.
 - Tool call mechanics ("I used the weather tool").
 - Anything already obvious from context.
 
 If nothing is worth remembering, respond with exactly: SKIP"""
+
+_FACTS_SYSTEM = """You extract durable facts from a conversation that the
+user explicitly asked the assistant to remember, or that are clearly
+stable attributes of the user (e.g. height, allergies, family members,
+preferred temperatures).
+
+Output format: one fact per line as `key: value`. Use snake_case keys.
+
+Examples:
+height: almost two meters
+allergies: peanuts
+preferred_thermostat: 70F
+spouse_name: Maria
+
+STRICT RULES:
+- Copy specific values verbatim. Never convert units. Never invent values.
+- Only include facts the user stated about themselves or their preferences.
+- Skip transient state (today's weather, current location, what they just did).
+- If nothing meets the bar, output exactly: NONE"""
 
 _llm: ChatOpenAI | None = None
 
@@ -47,7 +73,7 @@ def _get_llm() -> ChatOpenAI:
             model=settings.model_name,
             base_url=settings.vllm_url,
             api_key="not-needed",
-            temperature=0.2,
+            temperature=0.0,
             extra_body={"chat_template_kwargs": {"enable_thinking": False}},
         )
     return _llm
@@ -101,3 +127,52 @@ def summarize_and_store(messages: list, session_id: str | None = None) -> str | 
     get_store().write_summary(summary, session_id=session_id)
     log.info("summary_stored", session_id=session_id, chars=len(summary))
     return summary
+
+
+def _parse_facts(raw: str) -> list[tuple[str, str]]:
+    facts: list[tuple[str, str]] = []
+    for line in raw.splitlines():
+        line = line.strip().lstrip("-*• ").strip()
+        if not line or ":" not in line:
+            continue
+        key, _, value = line.partition(":")
+        key = key.strip().lower().replace(" ", "_")
+        value = value.strip()
+        if key and value:
+            facts.append((key, value))
+    return facts
+
+
+def extract_and_store_facts(messages: list, session_id: str | None = None) -> list[tuple[str, str]]:
+    """Extract durable user facts from the session and persist via set_fact."""
+    if not settings.memory_enabled:
+        return []
+
+    transcript = _transcript(messages)
+    if not transcript.strip():
+        return []
+
+    try:
+        resp = _get_llm().invoke([
+            SystemMessage(content=_FACTS_SYSTEM),
+            HumanMessage(content=transcript),
+        ])
+    except Exception as e:
+        log.error("facts_llm_failed", error=str(e))
+        return []
+
+    raw = (resp.content or "").strip()
+    if not raw or raw.upper() == "NONE":
+        log.info("facts_none", session_id=session_id)
+        return []
+
+    facts = _parse_facts(raw)
+    if not facts:
+        log.info("facts_unparseable", session_id=session_id, raw_chars=len(raw))
+        return []
+
+    store = get_store()
+    for key, value in facts:
+        store.set_fact(key, value, source="session_extraction")
+    log.info("facts_stored", session_id=session_id, count=len(facts), keys=[k for k, _ in facts])
+    return facts

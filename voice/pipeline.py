@@ -15,7 +15,7 @@ import structlog
 from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.types import Command
 
-from agent.summarizer import summarize_and_store
+from agent.summarizer import extract_and_store_facts, summarize_and_store
 from agent.tracing import setup_logging, new_request_id
 from voice.audio import play_audio, record_until_silence, warm_up as warm_up_vad
 from voice.config import voice_settings
@@ -157,6 +157,10 @@ class VoicePipeline:
                 summarize_and_store(session_messages, session_id=request_id)
             except Exception as e:
                 log.warning("summary_failed", error=str(e))
+            try:
+                extract_and_store_facts(session_messages, session_id=request_id)
+            except Exception as e:
+                log.warning("facts_failed", error=str(e))
 
         structlog.contextvars.unbind_contextvars("request_id")
         print(f"✅ Turn done ({round(duration, 1)}s)\n")

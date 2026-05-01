@@ -37,6 +37,8 @@ CREATE TABLE IF NOT EXISTS facts (
 );
 """
 
+_INIT_RETRY_INTERVAL_S = 60.0
+
 
 @dataclass
 class MemoryHit:
@@ -63,7 +65,7 @@ class MemoryStore:
         self._sqlite: sqlite3.Connection | None = None
         self._dim: int | None = None
         self._ready = False
-        self._init_failed = False
+        self._last_init_attempt: float = 0.0
 
     # -- construction ------------------------------------------------------
     @classmethod
@@ -76,8 +78,12 @@ class MemoryStore:
     def _ensure_ready(self) -> bool:
         if self._ready:
             return True
-        if self._init_failed or not settings.memory_enabled:
+        if not settings.memory_enabled:
             return False
+        now = time.time()
+        if now - self._last_init_attempt < _INIT_RETRY_INTERVAL_S:
+            return False
+        self._last_init_attempt = now
         try:
             self._init_sqlite()
             self._init_embedder()
@@ -92,10 +98,7 @@ class MemoryStore:
                 dim=self._dim,
             )
         except Exception as e:
-            # Log once, then stop retrying — a broken Qdrant URL or missing
-            # model would otherwise spam every turn.
             log.error("memory_init_failed", error=str(e))
-            self._init_failed = True
             self._ready = False
         return self._ready
 
@@ -110,11 +113,22 @@ class MemoryStore:
     def _init_embedder(self) -> None:
         from sentence_transformers import SentenceTransformer
 
-        self._embedder = SentenceTransformer(
-            settings.memory_embed_model,
-            device=settings.memory_embed_device,
-            trust_remote_code=True,  # required by nomic-embed
-        )
+        try:
+            self._embedder = SentenceTransformer(
+                settings.memory_embed_model,
+                device=settings.memory_embed_device,
+                trust_remote_code=True,  # required by nomic-embed
+            )
+        except Exception as e:
+            # Network blip during HF metadata check shouldn't kill init when
+            # the model is already cached locally.
+            log.warning("embedder_online_failed_using_cache", error=str(e))
+            self._embedder = SentenceTransformer(
+                settings.memory_embed_model,
+                device=settings.memory_embed_device,
+                trust_remote_code=True,
+                local_files_only=True,
+            )
         self._dim = int(self._embedder.get_sentence_embedding_dimension())
 
         if settings.memory_rerank_model:
@@ -178,11 +192,12 @@ class MemoryStore:
         candidates_n = max(k, settings.memory_rerank_candidates if self._reranker else k)
 
         vec = self._embed(f"search_query: {query}")
-        hits = self._qdrant.search(
+        res = self._qdrant.query_points(
             collection_name=settings.memory_qdrant_collection,
-            query_vector=vec,
+            query=vec,
             limit=candidates_n,
         )
+        hits = res.points
         results = [
             MemoryHit(
                 text=h.payload.get("text", ""),
@@ -200,7 +215,9 @@ class MemoryStore:
                 r.score = float(s)
             results.sort(key=lambda r: r.score, reverse=True)
 
-        return results[:k]
+        threshold = settings.memory_score_threshold
+        filtered = [r for r in results if r.score >= threshold]
+        return filtered[:k]
 
     # -- structured facts --------------------------------------------------
     def set_fact(self, key: str, value: str, source: str = "user") -> None:

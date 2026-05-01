@@ -10,7 +10,7 @@ from langgraph.types import Command
 from agent.agent import create_agent
 from agent.config import settings, wait_for_vllm
 from agent.mcp import create_mcp_client
-from agent.summarizer import summarize_and_store
+from agent.summarizer import extract_and_store_facts, summarize_and_store
 from agent.tracing import setup_logging, new_request_id
 
 setup_logging()
@@ -84,6 +84,7 @@ async def main():
         print(f"\n{messages[-1].content}\n")
 
     summarize_and_store(messages, session_id=thread_id)
+    extract_and_store_facts(messages, session_id=thread_id)
 
 
 if __name__ == "__main__":

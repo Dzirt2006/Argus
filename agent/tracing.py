@@ -74,7 +74,6 @@ def make_call_model(llm_fast, llm_think=None):
     """
     from agent.config import settings
     from agent.memory import get_store
-    from agent.memory_classifier import should_retrieve
     from agent.thinking import should_think
 
     log = structlog.get_logger("agent.llm")
@@ -93,17 +92,14 @@ def make_call_model(llm_fast, llm_think=None):
         thinking = llm_think is not None and should_think(user_text)
         llm = llm_think if thinking else llm_fast
 
-        # Memory injection: facts always (when enabled), summaries only when
-        # the classifier sees a reference to past/personal state.
-        retrieve_vector = False
+        # Memory injection: facts always, vector summaries always (filtered
+        # by score threshold inside store.retrieve()).
         memory_block = ""
+        hits: list = []
         if settings.memory_enabled:
             store = get_store()
             facts = store.list_facts()
-            hits = []
-            retrieve_vector = should_retrieve(user_text)
-            if retrieve_vector:
-                hits = store.retrieve(user_text)
+            hits = store.retrieve(user_text)
             if facts or hits:
                 parts = []
                 if facts:
@@ -117,7 +113,7 @@ def make_call_model(llm_fast, llm_think=None):
 
         log.info("llm_call_start", request_id=request_id,
                  input_messages=len(messages), thinking=thinking,
-                 memory_retrieved=retrieve_vector,
+                 memory_hits=len(hits),
                  memory_block_chars=len(memory_block) or None)
         t0 = time.monotonic()
         response = llm.invoke(messages)

@@ -43,6 +43,7 @@ class Settings(BaseSettings):
     memory_top_k: int = 3
     memory_rerank_candidates: int = 15
     memory_summary_min_turns: int = 2  # skip summarizing very short sessions
+    memory_score_threshold: float = 0.55  # cosine sim cutoff (or rerank score if reranker enabled)
 
 
 settings = Settings()
