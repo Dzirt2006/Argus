@@ -92,28 +92,27 @@ def make_call_model(llm_fast, llm_think=None):
         thinking = llm_think is not None and should_think(user_text)
         llm = llm_think if thinking else llm_fast
 
-        # Memory injection: facts always, vector summaries always (filtered
-        # by score threshold inside store.retrieve()).
+        # Memory injection: all facts + the most recent N session summaries.
         memory_block = ""
-        hits: list = []
+        summaries: list = []
         if settings.memory_enabled:
             store = get_store()
             facts = store.list_facts()
-            hits = store.retrieve(user_text)
-            if facts or hits:
+            summaries = store.list_recent_summaries()
+            if facts or summaries:
                 parts = []
                 if facts:
                     parts.append("## Known facts")
                     parts.extend(f"- {k}: {v}" for k, v, _src in facts)
-                if hits:
-                    parts.append("## Relevant past context")
-                    parts.extend(f"- {h.text}" for h in hits)
+                if summaries:
+                    parts.append("## Recent context")
+                    parts.extend(f"- {s.text}" for s in summaries)
                 memory_block = "\n\n" + "\n".join(parts)
                 messages = _with_memory_block(messages, memory_block)
 
         log.info("llm_call_start", request_id=request_id,
                  input_messages=len(messages), thinking=thinking,
-                 memory_hits=len(hits),
+                 memory_summaries=len(summaries),
                  memory_block_chars=len(memory_block) or None)
         t0 = time.monotonic()
         response = llm.invoke(messages)

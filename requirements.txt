@@ -11,6 +11,3 @@ duckduckgo-search>=7
 google-api-python-client>=2.150
 google-auth-oauthlib>=1.2
 ytmusicapi>=1.8
-qdrant-client>=1.12
-sentence-transformers>=3.3
-einops>=0.8

@@ -160,7 +160,7 @@ docker-compose.yml  Full stack orchestration
 - [x] Phase 2 — Guardrails (allowlist, path validation, confirmation gates, tracing)
 - [x] Phase 3 — Voice pipeline (wake word, STT, TTS, end-to-end)
 - [ ] Phase 4 — Home Assistant integration + expanded tool suite
-- [ ] Phase 5 — Memory (Qdrant vector DB + RAG) + multi-room support
+- [ ] Phase 5 — Memory (SQLite facts + recent-summary injection) + multi-room support
 - [ ] Phase 6 — Web dashboard (FastAPI + HTMX) + monitoring + hardening
 
 ## License

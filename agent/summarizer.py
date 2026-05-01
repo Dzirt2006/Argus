@@ -2,8 +2,8 @@
 
 One LLM call at the end of a conversation.  Extracts what the assistant
 would want to remember next time — intents expressed, decisions made,
-preferences revealed, tools used.  The summary gets embedded and stored
-in Qdrant via MemoryStore.
+preferences revealed, tools used.  The summary is appended to the
+`summaries` table via MemoryStore.
 
 Uses thinking=False: summarization is high-recall-from-context, not
 reasoning-heavy.  Keeping it fast matters because this runs at the exact
@@ -97,7 +97,7 @@ def _count_user_turns(messages: list) -> int:
 
 
 def summarize_and_store(messages: list, session_id: str | None = None) -> str | None:
-    """Summarize a session and persist to Qdrant.  Returns the summary text, or None."""
+    """Summarize a session and persist via MemoryStore.  Returns the summary text, or None."""
     if not settings.memory_enabled:
         return None
 

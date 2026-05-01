@@ -22,28 +22,19 @@ class Settings(BaseSettings):
     ha_url: str = ""
     ha_token: str = ""
     mcp_servers: dict[str, str] = Field(default_factory=lambda: {
-        # "filesystem": "http://localhost:8001",
-        # "system": "http://localhost:8002",
-        # "search": "http://localhost:8003",
-        # "weather": "http://localhost:8004",
-        # "calendar": "http://localhost:8005",
-        # "media": "http://localhost:8006",
-        # "memory": "http://localhost:8007",
-
+        "memory": "http://localhost:8007",
+        "filesystem": "http://localhost:8001",
+        "system": "http://localhost:8002",
+        "search": "http://localhost:8003",
+        # "weather": "http://localhost:8004",   # not yet in compose
+        # "calendar": "http://localhost:8005",  # not yet in compose
+        # "media": "http://localhost:8006",     # not yet in compose
     })
 
     memory_enabled: bool = False
     memory_sqlite_path: str = "/data/memory.db"
-    memory_qdrant_url: str = "http://qdrant:6333"
-    memory_qdrant_collection: str = "argus_summaries"
-    memory_embed_model: str = "nomic-ai/nomic-embed-text-v1.5"
-    memory_embed_device: str = "cpu"  # cpu | cuda
-    memory_rerank_model: str = ""     # empty = no rerank; e.g. "Qwen/Qwen3-Reranker-0.6B"
-    memory_rerank_device: str = "cpu"
-    memory_top_k: int = 3
-    memory_rerank_candidates: int = 15
-    memory_summary_min_turns: int = 2  # skip summarizing very short sessions
-    memory_score_threshold: float = 0.55  # cosine sim cutoff (or rerank score if reranker enabled)
+    memory_summary_min_turns: int = 2          # skip summarizing very short sessions
+    memory_summaries_inject_n: int = 20        # how many recent summaries to inject per turn
 
 
 settings = Settings()

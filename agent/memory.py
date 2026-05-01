@@ -1,15 +1,15 @@
 """Long-term memory for the agent.
 
-Two stores:
-- SQLite: structured facts/preferences with exact-key lookup.
-- Qdrant: embedded session summaries for semantic retrieval.
+Single SQLite store with two tables:
+- `facts`: structured key/value preferences with exact-key lookup.
+- `summaries`: end-of-session natural-language notes, append-only.
 
-Retrieval is synchronous on purpose — the LangGraph `call_model` node is
-sync, and retrieval happens at most once per user turn.  Embedding on CPU
-for a short query is <100ms; Qdrant HNSW search is single-digit ms.
+No vector retrieval. The corpus is small enough (one note per session)
+to inject the most recent N entries into the system prompt directly,
+which gives full recall without an embedder, reranker, or vector DB.
 
-Everything is a no-op when settings.memory_enabled is false, so the rest
-of the codebase can call into MemoryStore unconditionally.
+Everything is a no-op when settings.memory_enabled is false, so the
+rest of the codebase can call into MemoryStore unconditionally.
 """
 
 from __future__ import annotations
@@ -17,7 +17,6 @@ from __future__ import annotations
 import sqlite3
 import threading
 import time
-import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -35,39 +34,39 @@ CREATE TABLE IF NOT EXISTS facts (
     created_at REAL NOT NULL,
     updated_at REAL NOT NULL
 );
-"""
 
-_INIT_RETRY_INTERVAL_S = 60.0
+CREATE TABLE IF NOT EXISTS summaries (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT,
+    text       TEXT NOT NULL,
+    created_at REAL NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_summaries_created ON summaries(created_at DESC);
+"""
 
 
 @dataclass
-class MemoryHit:
+class Summary:
     text: str
-    score: float
     session_id: str
     created_at: float
 
 
 class MemoryStore:
-    """Singleton wrapper around the SQLite + Qdrant + embedder trio.
+    """Singleton wrapper around the SQLite memory file.
 
     Thread-safe for the expected access pattern (one writer, a few readers).
-    Heavy resources load lazily on first use so disabling memory costs nothing.
+    SQLite WAL handles concurrent reads from the agent and the memory MCP.
     """
 
     _instance: MemoryStore | None = None
     _lock = threading.Lock()
 
     def __init__(self) -> None:
-        self._embedder = None
-        self._reranker = None
-        self._qdrant = None
         self._sqlite: sqlite3.Connection | None = None
-        self._dim: int | None = None
         self._ready = False
-        self._last_init_attempt: float = 0.0
 
-    # -- construction ------------------------------------------------------
     @classmethod
     def instance(cls) -> MemoryStore:
         with cls._lock:
@@ -80,144 +79,43 @@ class MemoryStore:
             return True
         if not settings.memory_enabled:
             return False
-        now = time.time()
-        if now - self._last_init_attempt < _INIT_RETRY_INTERVAL_S:
-            return False
-        self._last_init_attempt = now
         try:
-            self._init_sqlite()
-            self._init_embedder()
-            self._init_qdrant()
+            path = Path(settings.memory_sqlite_path)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            conn = sqlite3.connect(str(path), check_same_thread=False, isolation_level=None)
+            conn.execute("PRAGMA journal_mode=WAL;")
+            conn.executescript(_SQLITE_SCHEMA)
+            self._sqlite = conn
             self._ready = True
-            log.info(
-                "memory_ready",
-                embed_model=settings.memory_embed_model,
-                embed_device=settings.memory_embed_device,
-                rerank_model=settings.memory_rerank_model or None,
-                collection=settings.memory_qdrant_collection,
-                dim=self._dim,
-            )
+            log.info("memory_ready", path=str(path))
         except Exception as e:
             log.error("memory_init_failed", error=str(e))
             self._ready = False
         return self._ready
 
-    def _init_sqlite(self) -> None:
-        path = Path(settings.memory_sqlite_path)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        conn = sqlite3.connect(str(path), check_same_thread=False, isolation_level=None)
-        conn.execute("PRAGMA journal_mode=WAL;")
-        conn.executescript(_SQLITE_SCHEMA)
-        self._sqlite = conn
-
-    def _init_embedder(self) -> None:
-        from sentence_transformers import SentenceTransformer
-
-        try:
-            self._embedder = SentenceTransformer(
-                settings.memory_embed_model,
-                device=settings.memory_embed_device,
-                trust_remote_code=True,  # required by nomic-embed
-            )
-        except Exception as e:
-            # Network blip during HF metadata check shouldn't kill init when
-            # the model is already cached locally.
-            log.warning("embedder_online_failed_using_cache", error=str(e))
-            self._embedder = SentenceTransformer(
-                settings.memory_embed_model,
-                device=settings.memory_embed_device,
-                trust_remote_code=True,
-                local_files_only=True,
-            )
-        self._dim = int(self._embedder.get_sentence_embedding_dimension())
-
-        if settings.memory_rerank_model:
-            try:
-                from sentence_transformers import CrossEncoder
-
-                self._reranker = CrossEncoder(
-                    settings.memory_rerank_model,
-                    device=settings.memory_rerank_device,
-                    trust_remote_code=True,
-                )
-            except Exception as e:
-                log.warning("reranker_load_failed", error=str(e))
-                self._reranker = None
-
-    def _init_qdrant(self) -> None:
-        from qdrant_client import QdrantClient
-        from qdrant_client.models import Distance, VectorParams
-
-        self._qdrant = QdrantClient(url=settings.memory_qdrant_url)
-        name = settings.memory_qdrant_collection
-        existing = {c.name for c in self._qdrant.get_collections().collections}
-        if name not in existing:
-            self._qdrant.create_collection(
-                collection_name=name,
-                vectors_config=VectorParams(size=self._dim, distance=Distance.COSINE),
-            )
-
-    # -- vector memory (summaries) -----------------------------------------
-    def _embed(self, text: str) -> list[float]:
-        # nomic prefixes — "search_document:" for stored items, "search_query:" for queries
-        vec = self._embedder.encode(text, normalize_embeddings=True)
-        return vec.tolist()
-
-    def write_summary(self, text: str, session_id: str | None = None) -> str | None:
-        """Embed a session summary and store it. Returns the point id."""
+    # -- summaries ---------------------------------------------------------
+    def write_summary(self, text: str, session_id: str | None = None) -> int | None:
+        """Persist a session summary. Returns the row id."""
         if not self._ensure_ready() or not text.strip():
             return None
-        from qdrant_client.models import PointStruct
-
-        prefixed = f"search_document: {text}"
-        vec = self._embed(prefixed)
-        point_id = str(uuid.uuid4())
-        payload = {
-            "text": text,
-            "session_id": session_id or point_id,
-            "created_at": time.time(),
-        }
-        self._qdrant.upsert(
-            collection_name=settings.memory_qdrant_collection,
-            points=[PointStruct(id=point_id, vector=vec, payload=payload)],
+        cur = self._sqlite.execute(
+            "INSERT INTO summaries(session_id, text, created_at) VALUES (?, ?, ?)",
+            (session_id, text, time.time()),
         )
-        log.info("memory_summary_stored", session_id=payload["session_id"], chars=len(text))
-        return point_id
+        log.info("memory_summary_stored", session_id=session_id, chars=len(text))
+        return cur.lastrowid
 
-    def retrieve(self, query: str, k: int | None = None) -> list[MemoryHit]:
-        """Top-k summaries for a query, optionally reranked."""
-        if not self._ensure_ready() or not query.strip():
+    def list_recent_summaries(self, limit: int | None = None) -> list[Summary]:
+        """Return the most recent summaries, newest-first."""
+        if not self._ensure_ready():
             return []
-        k = k or settings.memory_top_k
-        candidates_n = max(k, settings.memory_rerank_candidates if self._reranker else k)
-
-        vec = self._embed(f"search_query: {query}")
-        res = self._qdrant.query_points(
-            collection_name=settings.memory_qdrant_collection,
-            query=vec,
-            limit=candidates_n,
-        )
-        hits = res.points
-        results = [
-            MemoryHit(
-                text=h.payload.get("text", ""),
-                score=float(h.score),
-                session_id=h.payload.get("session_id", ""),
-                created_at=float(h.payload.get("created_at", 0.0)),
-            )
-            for h in hits
-        ]
-
-        if self._reranker and len(results) > 1:
-            pairs = [(query, r.text) for r in results]
-            scores = self._reranker.predict(pairs).tolist()
-            for r, s in zip(results, scores):
-                r.score = float(s)
-            results.sort(key=lambda r: r.score, reverse=True)
-
-        threshold = settings.memory_score_threshold
-        filtered = [r for r in results if r.score >= threshold]
-        return filtered[:k]
+        n = limit if limit is not None else settings.memory_summaries_inject_n
+        rows = self._sqlite.execute(
+            "SELECT text, session_id, created_at FROM summaries "
+            "ORDER BY created_at DESC LIMIT ?",
+            (n,),
+        ).fetchall()
+        return [Summary(text=t, session_id=s or "", created_at=float(c)) for t, s, c in rows]
 
     # -- structured facts --------------------------------------------------
     def set_fact(self, key: str, value: str, source: str = "user") -> None:
