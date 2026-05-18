@@ -123,5 +123,15 @@ services:
     volumes:
       - ./data:/data
 
+  switches:
+    build:
+      context: .
+      dockerfile: mcp_servers/switches/Dockerfile
+    ports:
+      - "8008:8008"
+    environment:
+      - HA_URL=${HA_URL}
+      - HA_TOKEN=${HA_TOKEN}
+
 volumes:
   huggingface-cache:

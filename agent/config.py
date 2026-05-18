@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     ha_token: str = ""
     mcp_servers: dict[str, str] = Field(default_factory=lambda: {
         "memory": "http://localhost:8007",
+        "switches": "http://localhost:8008",
         "filesystem": "http://localhost:8001",
         "system": "http://localhost:8002",
         "search": "http://localhost:8003",

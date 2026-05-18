@@ -74,6 +74,7 @@ def make_call_model(llm_fast, llm_think=None):
     """
     from agent.config import settings
     from agent.memory import get_store
+    from agent.switches_cache import get_switches_block
     from agent.thinking import should_think
 
     log = structlog.get_logger("agent.llm")
@@ -92,8 +93,8 @@ def make_call_model(llm_fast, llm_think=None):
         thinking = llm_think is not None and should_think(user_text)
         llm = llm_think if thinking else llm_fast
 
-        # Memory injection: all facts + the most recent N session summaries.
-        memory_block = ""
+        # Context injection: memory (facts + recent summaries) + switches list.
+        context_block = ""
         summaries: list = []
         if settings.memory_enabled:
             store = get_store()
@@ -107,13 +108,15 @@ def make_call_model(llm_fast, llm_think=None):
                 if summaries:
                     parts.append("## Recent context")
                     parts.extend(f"- {s.text}" for s in summaries)
-                memory_block = "\n\n" + "\n".join(parts)
-                messages = _with_memory_block(messages, memory_block)
+                context_block = "\n\n" + "\n".join(parts)
+        context_block += get_switches_block()
+        if context_block:
+            messages = _with_memory_block(messages, context_block)
 
         log.info("llm_call_start", request_id=request_id,
                  input_messages=len(messages), thinking=thinking,
                  memory_summaries=len(summaries),
-                 memory_block_chars=len(memory_block) or None)
+                 context_block_chars=len(context_block) or None)
         t0 = time.monotonic()
         response = llm.invoke(messages)
         duration = time.monotonic() - t0
