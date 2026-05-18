@@ -2,7 +2,9 @@ data/
 ha_config/
 result/
 .vscode/
-.claude/
+.claude/*
+!.claude/settings.json
+!.claude/hooks/
 files/
 configs/*.env
 outputs/
