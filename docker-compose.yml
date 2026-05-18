@@ -57,6 +57,11 @@ services:
       context: .
       dockerfile: agent/Dockerfile
     env_file: .env
+    environment:
+      # HA runs with network_mode: host, so reach it via the host gateway.
+      - HA_URL=http://host.docker.internal:8123
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       - vllm
       - filesystem
@@ -130,8 +135,11 @@ services:
     ports:
       - "8008:8008"
     environment:
-      - HA_URL=${HA_URL}
+      # HA runs with network_mode: host, so reach it via the host gateway.
+      - HA_URL=http://host.docker.internal:8123
       - HA_TOKEN=${HA_TOKEN}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
 volumes:
   huggingface-cache:
