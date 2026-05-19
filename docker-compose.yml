@@ -66,6 +66,8 @@ services:
       - vllm
       - filesystem
       - system
+      - weather
+      - calendar
     stdin_open: true
     tty: true
 
