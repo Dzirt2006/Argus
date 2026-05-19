@@ -150,13 +150,15 @@ Key settings:
 
 ```
 agent/              Core LangGraph agent, CLI, config, guardrails, tracing
-mcp_servers/        Six modular MCP tool servers
+mcp_servers/        Eight modular MCP tool servers
   filesystem/       File operations (sandboxed)
   system/           System metrics (uptime, disk, RAM, GPU)
   search/           Web search (SearXNG)
   weather/          Weather and forecasts (Open-Meteo)
   calendar/         Google Calendar integration
   media/            Music playback (YouTube Music + mpv)
+  memory/           SQLite-backed facts + recent-summary store (shared with agent via /data/memory.db)
+  switches/         Home Assistant switch/light wrapper
 voice/              Voice pipeline (wake word, STT, TTS, audio I/O)
 docs/               Architecture docs, system prompt, development plan
 scripts/            Helper scripts for starting/stopping MCP servers
