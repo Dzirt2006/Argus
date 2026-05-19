@@ -141,5 +141,21 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
+  weather:
+    build:
+      context: .
+      dockerfile: mcp_servers/weather/Dockerfile
+    ports:
+      - "8004:8004"
+
+  calendar:
+    build:
+      context: .
+      dockerfile: mcp_servers/calendar/Dockerfile
+    ports:
+      - "8005:8005"
+    volumes:
+      - ./data:/data
+
 volumes:
   huggingface-cache:
