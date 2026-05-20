@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Argus — Summaries{% endblock %}
+{% block content %}
+<h1>Session summaries</h1>
+<p class="muted">Last {{ rows | length }} rows, newest first.</p>
+{% if rows %}
+<table>
+  <thead>
+    <tr>
+      <th>Text</th>
+      <th>Session</th>
+      <th>Created at</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for r in rows %}
+    <tr>
+      <td>{{ r.text | truncate_chars(280) }}</td>
+      <td>{{ r.session_id }}</td>
+      <td>{{ r.created_at | int }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="muted">No summaries found.</p>
+{% endif %}
+{% endblock %}

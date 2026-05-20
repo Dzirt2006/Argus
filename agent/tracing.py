@@ -3,20 +3,62 @@
 Wraps LLM calls and tool execution with timing, token counts, and
 decision logging.  Uses structlog for JSON output in Docker and
 pretty console output locally.
+
+A side-channel processor also mirrors every event as JSONL to
+``/data/logs/agent.jsonl`` so the webui can tail it.  This is purely
+additive: stdout formatting is unchanged.
 """
 
 from __future__ import annotations
 
+import json
 import os
 import sys
+import threading
 import time
 import uuid
+from typing import Any
 
 import structlog
 
 
+AGENT_JSONL_PATH = os.environ.get("AGENT_LOG_FILE", "/data/logs/agent.jsonl")
+
+_file_lock = threading.Lock()
+_jsonl_fh: Any = None
+
+
+def _open_jsonl_sink(path: str) -> Any:
+    """Open the JSONL sink, creating parent dirs. Returns None on failure."""
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        return open(path, "a", buffering=1, encoding="utf-8")
+    except OSError:
+        # Read-only FS or perms — keep stdout logging working regardless.
+        return None
+
+
+def _jsonl_sink_processor(logger: Any, method_name: str, event_dict: dict) -> dict:
+    """Structlog processor that mirrors the event to a JSONL file.
+
+    Runs before the final renderer so we render our own JSON copy and
+    leave the event_dict untouched for the configured stdout renderer.
+    """
+    if _jsonl_fh is None:
+        return event_dict
+    try:
+        line = json.dumps(event_dict, default=str, ensure_ascii=False)
+        with _file_lock:
+            _jsonl_fh.write(line + "\n")
+    except Exception:
+        # Never let logging crash the agent.
+        pass
+    return event_dict
+
+
 def setup_logging() -> None:
     """Configure structlog.  Call once at startup."""
+    global _jsonl_fh
     is_docker = os.path.exists("/.dockerenv")
 
     if is_docker:
@@ -24,12 +66,16 @@ def setup_logging() -> None:
     else:
         renderer = structlog.dev.ConsoleRenderer(colors=sys.stderr.isatty())
 
+    if _jsonl_fh is None:
+        _jsonl_fh = _open_jsonl_sink(AGENT_JSONL_PATH)
+
     structlog.configure(
         processors=[
             structlog.contextvars.merge_contextvars,
             structlog.processors.add_log_level,
             structlog.processors.TimeStamper(fmt="iso"),
             structlog.processors.StackInfoRenderer(),
+            _jsonl_sink_processor,
             renderer,
         ],
         wrapper_class=structlog.make_filtering_bound_logger(0),
@@ -90,7 +136,7 @@ def make_call_model(llm_fast, llm_think=None):
                 user_text = msg.content
                 break
 
-        thinking = llm_think is not None and should_think(user_text)
+        thinking = llm_think is not None and should_think(user_text, llm_fast)
         llm = llm_think if thinking else llm_fast
 
         # Context injection: memory (facts + recent summaries) + switches list.

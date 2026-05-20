@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Argus — Overview{% endblock %}
+{% block content %}
+<h1>Overview</h1>
+<section class="stats">
+  <div class="stat">
+    <div class="label">Facts stored</div>
+    <div class="value">{{ facts_count }}</div>
+  </div>
+  <div class="stat">
+    <div class="label">Latest summary</div>
+    <div class="value">
+      {% if latest_summary_ts %}
+        {{ latest_summary_ts | int }}
+      {% else %}
+        <span class="muted">none</span>
+      {% endif %}
+    </div>
+  </div>
+  <div class="stat">
+    <div class="label">MCP reachable</div>
+    <div class="value">{{ mcp_reachable }} / {{ mcp_total }}</div>
+  </div>
+</section>
+<ul class="links">
+  <li><a href="/memory/facts">Facts</a></li>
+  <li><a href="/memory/summaries">Session summaries</a></li>
+  <li><a href="/tools/recent">Recent tool calls</a></li>
+  <li><a href="/health">MCP health</a></li>
+</ul>
+{% endblock %}

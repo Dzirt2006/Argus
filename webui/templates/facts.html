@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Argus — Facts{% endblock %}
+{% block content %}
+<h1>Facts</h1>
+<p class="muted">{{ rows | length }} rows, newest first.</p>
+{% if rows %}
+<table>
+  <thead>
+    <tr>
+      <th>Key</th>
+      <th>Value</th>
+      <th>Source</th>
+      <th>Updated at</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for r in rows %}
+    <tr>
+      <td>{{ r.key }}</td>
+      <td>{{ r.value }}</td>
+      <td>{{ r.source }}</td>
+      <td>{{ r.updated_at | int }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="muted">No facts found. Memory DB may be missing or empty.</p>
+{% endif %}
+{% endblock %}
