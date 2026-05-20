@@ -90,7 +90,7 @@ def make_call_model(llm_fast, llm_think=None):
                 user_text = msg.content
                 break
 
-        thinking = llm_think is not None and should_think(user_text)
+        thinking = llm_think is not None and should_think(user_text, llm_fast)
         llm = llm_think if thinking else llm_fast
 
         # Context injection: memory (facts + recent summaries) + switches list.

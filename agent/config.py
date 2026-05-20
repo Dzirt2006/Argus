@@ -40,6 +40,8 @@ class Settings(BaseSettings):
     memory_summary_min_turns: int = 2          # skip summarizing very short sessions
     memory_summaries_inject_n: int = 20        # how many recent summaries to inject per turn
 
+    thinking_llm_fallback_enabled: bool = True
+
 
 settings = Settings()
 
