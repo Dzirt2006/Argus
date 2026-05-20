@@ -12,6 +12,7 @@ the LLM wants to make and enforces four policies:
 from __future__ import annotations
 
 import json
+import posixpath
 
 import structlog
 from langchain_core.messages import AIMessage, ToolMessage
@@ -98,17 +99,16 @@ def _block_tool_call(tool_call: dict, reason: str) -> ToolMessage:
 
 
 def _path_is_safe(path: str) -> bool:
-    """Check that a path string stays under ALLOWED_BASE.
+    """True if `path` joined to ALLOWED_BASE stays under ALLOWED_BASE.
 
-    Intentionally simple string check — the filesystem MCP server does its
-    own resolve-and-verify, so this is a defence-in-depth layer, not the
-    only one.
+    `posixpath.join` makes an absolute `path` arg replace the base (so
+    "/etc/passwd" is caught), and `posixpath.normpath` resolves "..".
+    The filesystem MCP server does its own resolve-and-verify; this is
+    a defence-in-depth check on LLM-supplied paths.
     """
-    from pathlib import PurePosixPath
-
-    # Normalise without touching the real filesystem.
-    normalised = str(PurePosixPath(f"{ALLOWED_BASE}/{path}"))
-    return normalised.startswith(ALLOWED_BASE)
+    full = posixpath.join(ALLOWED_BASE, path)
+    resolved = posixpath.normpath(full)
+    return resolved == ALLOWED_BASE or resolved.startswith(ALLOWED_BASE + "/")
 
 
 # ---------------------------------------------------------------------------

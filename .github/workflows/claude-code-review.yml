@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      pull-requests: read
+      pull-requests: write
       issues: read
       id-token: write
 
@@ -36,9 +36,20 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          plugin_marketplaces: 'https://github.com/anthropics/claude-code.git'
-          plugins: 'code-review@claude-code-plugins'
-          prompt: '/code-review:code-review ${{ github.repository }}/pull/${{ github.event.pull_request.number }}'
-          # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
-          # or https://code.claude.com/docs/en/cli-reference for available options
+          prompt: |
+            Review this PR against the invariants documented in CLAUDE.md. Read CLAUDE.md before reviewing — this codebase has specific rules that aren't obvious from the diff alone.
+
+            Flag these specifically:
+
+            1. A new MCP tool added under `mcp_servers/` without its name being added to `ALLOWED_TOOLS` in `agent/guardrails.py`. Also check `DESTRUCTIVE_TOOLS` (if it mutates state) and `PATH_TOOLS` (if it takes a filesystem path).
+            2. Code in `agent/tracing.py:make_call_model` (or its helpers) that mutates `state["messages"]` instead of building a copy. The checkpointer relies on message identity for interrupt/resume.
+            3. `MODEL_NAME` hardcoded instead of relying on `wait_for_vllm()` auto-discovery from `/v1/models`.
+            4. Reintroduction of Qdrant, embedders, rerankers, or any vector retrieval — that path was deliberately dropped on 2026-05-01.
+            5. Filesystem MCP code that bypasses `_path_is_safe` or otherwise allows access outside the `/data` base.
+            6. FastMCP 2.x misuse: `port` passed to `FastMCP()` (must go on `mcp.run()`), or `MultiServerMCPClient` used as `async with`.
+            7. New `MemoryStore` callers that don't no-op when `settings.memory_enabled` is False.
+            8. Missing type hints on new function signatures.
+            9. General bugs, race conditions, secret leaks, obvious perf regressions.
+
+            Leave inline comments on the PR for issues you find. If the PR looks clean, post a single short approving summary. Don't comment for the sake of commenting — silence is fine for clean PRs.
 
