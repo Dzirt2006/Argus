@@ -27,6 +27,9 @@ class Settings(BaseSettings):
         "filesystem": "http://localhost:8001",
         "system": "http://localhost:8002",
         "search": "http://localhost:8003",
+        # "weather": "http://localhost:8004",   # not yet in compose
+        # "calendar": "http://localhost:8005",  # not yet in compose
+        "media": "http://localhost:8006",
         "weather": "http://localhost:8004",
         "calendar": "http://localhost:8005",
         # "media": "http://localhost:8006",     # not yet in compose
