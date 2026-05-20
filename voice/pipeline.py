@@ -254,6 +254,7 @@ class VoicePipeline:
         spoken_chars = 0
         sentences_emitted = 0
         agent_node_seen = False
+        stream_failed = False
 
         try:
             async for mode, payload in self.agent.astream(
@@ -285,9 +286,28 @@ class VoicePipeline:
             if tail:
                 sentences_emitted += 1
                 await queue.put(tail)
+        except BaseException:
+            stream_failed = True
+            raise
         finally:
-            await queue.put(None)
-            await consumer
+            # On the happy path block on the sentinel so we play out everything
+            # already queued. On the failure path the consumer may be stuck in
+            # a blocking executor call (synthesize/play_audio) with the queue
+            # full — `put(None)` would deadlock — so drop the sentinel
+            # non-blockingly and cancel the consumer instead.
+            if stream_failed:
+                try:
+                    queue.put_nowait(None)
+                except asyncio.QueueFull:
+                    pass
+                consumer.cancel()
+                try:
+                    await consumer
+                except (asyncio.CancelledError, Exception):
+                    pass
+            else:
+                await queue.put(None)
+                await consumer
 
         # After the stream finishes, query the checkpointed state to see if the
         # graph paused on an interrupt (e.g. destructive tool confirmation).
