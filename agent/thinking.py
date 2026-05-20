@@ -77,7 +77,10 @@ _log = structlog.get_logger("agent.thinking")
 
 
 def _cache_key(text: str) -> str:
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+    # Normalize so trivially-different phrasings ("Plan dinner", "plan dinner ",
+    # "plan  dinner") share a cache entry.
+    normalized = " ".join(text.lower().split())
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 
 def _cache_get(key: str) -> bool | None:
@@ -107,7 +110,10 @@ def _llm_classify(user_message: str, llm_fast: Any) -> bool:
         HumanMessage(content=_CLASSIFIER_HUMAN_TEMPLATE.format(msg=user_message)),
     ]
     # temperature=0 + tiny max_tokens keeps the extra call deterministic and cheap.
-    classifier = llm_fast.bind(temperature=0, max_tokens=4)
+    # tool_choice="none" suppresses tool calls so the bound MCP tool schemas
+    # aren't exercised here (they're still sent as input — unavoidable without
+    # rebinding — but at least the response is guaranteed plain text).
+    classifier = llm_fast.bind(temperature=0, max_tokens=4, tool_choice="none")
     try:
         response = classifier.invoke(messages)
     except Exception as exc:
@@ -119,6 +125,9 @@ def _llm_classify(user_message: str, llm_fast: Any) -> bool:
         # Some chat models return list-of-parts; concatenate text chunks.
         raw = "".join(part.get("text", "") if isinstance(part, dict) else str(part) for part in raw)
     answer = str(raw).strip().lower()
+    if not answer:
+        # Empty content (e.g. tool-call response with no text) — default safely.
+        return False
     return answer.startswith("y")
 
 

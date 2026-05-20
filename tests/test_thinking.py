@@ -147,3 +147,16 @@ def test_llm_failure_defaults_to_false() -> None:
     bound.invoke.side_effect = RuntimeError("vllm exploded")
     llm.bind.return_value = bound
     assert should_think("can you put together a list of options for dinner", llm_fast=llm) is False
+
+
+def test_cache_key_normalizes_case_and_whitespace() -> None:
+    llm = _make_mock_llm("Y")
+    # Ambiguous message (no keyword, long enough to pass hard-skip). Surface
+    # variants — case, trailing space, doubled internal whitespace — must
+    # share a cache entry so the LLM is consulted exactly once.
+    base = "can you put together a list of options for dinner"
+    assert should_think(base.upper(), llm_fast=llm) is True
+    assert should_think(base + "  ", llm_fast=llm) is True
+    assert should_think(base.replace(" ", "  "), llm_fast=llm) is True
+    bound = llm.bind.return_value
+    assert bound.invoke.call_count == 1
