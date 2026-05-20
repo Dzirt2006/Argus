@@ -30,9 +30,12 @@ class Settings(BaseSettings):
         # "weather": "http://localhost:8004",   # not yet in compose
         # "calendar": "http://localhost:8005",  # not yet in compose
         "media": "http://localhost:8006",
+        "weather": "http://localhost:8004",
+        "calendar": "http://localhost:8005",
+        # "media": "http://localhost:8006",     # not yet in compose
     })
 
-    memory_enabled: bool = False
+    memory_enabled: bool = True
     memory_sqlite_path: str = "/data/memory.db"
     memory_summary_min_turns: int = 2          # skip summarizing very short sessions
     memory_summaries_inject_n: int = 20        # how many recent summaries to inject per turn

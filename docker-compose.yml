@@ -66,6 +66,8 @@ services:
       - vllm
       - filesystem
       - system
+      - weather
+      - calendar
     stdin_open: true
     tty: true
 
@@ -155,6 +157,21 @@ services:
     volumes:
       - ${XDG_RUNTIME_DIR:-/run/user/1000}/pulse/native:/run/user/1000/pulse/native:ro
       - ${HOME}/.config/pulse/cookie:/root/.config/pulse/cookie:ro
+  weather:
+    build:
+      context: .
+      dockerfile: mcp_servers/weather/Dockerfile
+    ports:
+      - "8004:8004"
+
+  calendar:
+    build:
+      context: .
+      dockerfile: mcp_servers/calendar/Dockerfile
+    ports:
+      - "8005:8005"
+    volumes:
+      - ./data:/data
 
 volumes:
   huggingface-cache:
