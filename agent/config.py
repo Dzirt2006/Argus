@@ -29,7 +29,7 @@ class Settings(BaseSettings):
         "search": "http://localhost:8003",
         # "weather": "http://localhost:8004",   # not yet in compose
         # "calendar": "http://localhost:8005",  # not yet in compose
-        # "media": "http://localhost:8006",     # not yet in compose
+        "media": "http://localhost:8006",
     })
 
     memory_enabled: bool = False

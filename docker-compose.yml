@@ -141,5 +141,20 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
+  media:
+    build:
+      context: .
+      dockerfile: mcp_servers/media/Dockerfile
+    ports:
+      - "8006:8006"
+    # Host audio passthrough via PulseAudio. See docs/media_setup.md for the
+    # ALSA fallback and for adjusting PUID if your host UID isn't 1000.
+    environment:
+      - PULSE_SERVER=${PULSE_SERVER:-unix:/run/user/1000/pulse/native}
+      - PUID=${PUID:-1000}
+    volumes:
+      - ${XDG_RUNTIME_DIR:-/run/user/1000}/pulse/native:/run/user/1000/pulse/native:ro
+      - ${HOME}/.config/pulse/cookie:/root/.config/pulse/cookie:ro
+
 volumes:
   huggingface-cache:
