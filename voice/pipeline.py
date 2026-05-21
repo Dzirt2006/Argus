@@ -1,6 +1,6 @@
 """Voice pipeline orchestrator.
 
-wake word → record → STT → agent → TTS → speaker
+wake word → record → STT → agent (streaming) → sentence TTS → speaker
 
 Run directly:  python -m voice.pipeline
 """
@@ -12,13 +12,14 @@ import time
 
 import numpy as np
 import structlog
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import AIMessageChunk, HumanMessage
 from langgraph.types import Command
 
 from agent.summarizer import extract_and_store_facts, summarize_and_store
 from agent.tracing import setup_logging, new_request_id
 from voice.audio import play_audio, record_until_silence, warm_up as warm_up_vad
 from voice.config import voice_settings
+from voice.sentence_buffer import SentenceBuffer
 from voice.stt import transcribe, warm_up as warm_up_stt
 from voice.tts import synthesize
 from voice.wakeword import listen_for_wakeword
@@ -27,9 +28,36 @@ setup_logging()
 log = structlog.get_logger("voice.pipeline")
 
 
+# Bounded so the producer doesn't run wildly ahead of the speaker.
+_TTS_QUEUE_MAX = 8
+
+
 def _is_question(text: str) -> bool:
     """Heuristic: treat a trailing '?' as 'agent wants a reply'."""
     return text.rstrip().endswith("?") if text else False
+
+
+def _chunk_text(chunk: AIMessageChunk) -> str:
+    """Extract the visible content from an AIMessageChunk.
+
+    Qwen3's reasoning-parser ships chain-of-thought in ``additional_kwargs``
+    (as ``reasoning_content``); only ``chunk.content`` is meant to be spoken.
+    Content can be a string or a list of content blocks (multimodal).
+    """
+    content = chunk.content
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for block in content:
+            if isinstance(block, str):
+                parts.append(block)
+            elif isinstance(block, dict) and block.get("type") == "text":
+                t = block.get("text")
+                if isinstance(t, str):
+                    parts.append(t)
+        return "".join(parts)
+    return ""
 
 
 _TONE_SR = 16000
@@ -43,6 +71,27 @@ def _make_tone(freq: float, duration: float, amplitude: float = 0.3) -> np.ndarr
 def _make_error_tone() -> np.ndarray:
     """Descending two-tone buzz to signal failure."""
     return np.concatenate([_make_tone(440, 0.12), _make_tone(220, 0.18)])
+
+
+async def _tts_consumer(queue: "asyncio.Queue[str | None]", request_id: str) -> None:
+    """Pull sentences off ``queue`` and play each in order.
+
+    Terminates when it receives the ``None`` sentinel. Audio plays in the
+    order sentences were enqueued.
+    """
+    loop = asyncio.get_running_loop()
+    while True:
+        sentence = await queue.get()
+        if sentence is None:
+            queue.task_done()
+            return
+        try:
+            audio, sr = await loop.run_in_executor(None, synthesize, sentence)
+            await loop.run_in_executor(None, play_audio, audio, sr)
+        except Exception as e:
+            log.warning("tts_sentence_failed", request_id=request_id, error=str(e))
+        finally:
+            queue.task_done()
 
 
 class VoicePipeline:
@@ -119,24 +168,20 @@ class VoicePipeline:
             log.info("user_said", request_id=request_id, text=text, followup=followup)
             print(f"👤 You said: \"{text}\"")
 
-            # --- Agent ---
+            # --- Agent (streaming) ---
             print("🤖 Thinking...")
             self.messages.append(HumanMessage(content=text))
-            result = await self.agent.ainvoke({"messages": self.messages}, self.config)
+            response_text = await self._stream_and_speak(
+                {"messages": self.messages}, request_id
+            )
 
-            # Handle confirmation interrupts via voice
-            while result.get("__interrupt__"):
-                result = await self._handle_voice_confirm(result)
-
-            self.messages = result["messages"]
-            response_text = self.messages[-1].content
-            log.info("agent_response", request_id=request_id, text_length=len(response_text))
+            # Pull the final checkpointed state for next turn's input.
+            state = await self.agent.aget_state(self.config)
+            self.messages = state.values["messages"]
+            log.info(
+                "agent_response", request_id=request_id, text_length=len(response_text)
+            )
             print(f"🤖 Argus: {response_text}")
-
-            # --- TTS ---
-            print("🔊 Speaking...")
-            response_audio, sr = synthesize(response_text)
-            play_audio(response_audio, sample_rate=sr)
 
             if not _is_question(response_text):
                 break
@@ -166,25 +211,168 @@ class VoicePipeline:
         print(f"✅ Turn done ({round(duration, 1)}s)\n")
         print("👂 Listening for wake word...\n")
 
-    async def _handle_voice_confirm(self, result: dict) -> dict:
-        """Speak the confirmation question, listen for yes/no."""
-        for irq in result.get("__interrupt__", []):
-            desc = irq.value.get("description", "an action")
-            question = f"Should I proceed with {desc}?"
-            log.info("confirm_asking", description=desc)
+    async def _stream_and_speak(self, stream_input, request_id: str) -> str:
+        """Stream the agent run, speak sentences as they form, handle interrupts.
 
-            # Speak the question
-            q_audio, sr = synthesize(question)
-            play_audio(q_audio, sample_rate=sr)
+        Loops over the graph stream — every time the graph pauses on an
+        interrupt() we speak the confirmation question, capture a yes/no via
+        STT, resume with Command(resume=...) and continue streaming. Returns
+        the visible response text from the final AI message.
+        """
+        current_input = stream_input
+        final_text = ""
 
-            # Listen for answer
-            print("Waiting for confirmation...")
-            answer_audio = record_until_silence()
-            answer_text = transcribe(answer_audio).lower().strip()
-            log.info("confirm_answer", text=answer_text)
+        while True:
+            final_text, pending_interrupts = await self._stream_one_phase(
+                current_input, request_id
+            )
+            if not pending_interrupts:
+                break
 
-            approved = answer_text in ("yes", "yeah", "yep", "sure", "go ahead", "do it", "y")
-            resume_value = "y" if approved else "n"
-            result = await self.agent.ainvoke(Command(resume=resume_value), self.config)
+            # Resume one interrupt at a time. After each resume, the graph
+            # continues and may pause again on another interrupt; the outer
+            # while-loop catches that on the next pass.
+            irq = pending_interrupts[0]
+            resume_value = await self._voice_confirm_one(irq)
+            current_input = Command(resume=resume_value)
 
-        return result
+        return final_text
+
+    async def _stream_one_phase(
+        self, stream_input, request_id: str
+    ) -> tuple[str, list]:
+        """Run one segment of the graph stream until END or interrupt.
+
+        Returns the visible text spoken in this phase and any pending
+        interrupts found in the final state (empty list if the graph ran
+        through to END).
+        """
+        buffer = SentenceBuffer()
+        queue: asyncio.Queue[str | None] = asyncio.Queue(maxsize=_TTS_QUEUE_MAX)
+        consumer = asyncio.create_task(_tts_consumer(queue, request_id))
+
+        spoken_chars = 0
+        sentences_emitted = 0
+        agent_node_seen = False
+        stream_failed = False
+
+        try:
+            async for mode, payload in self.agent.astream(
+                stream_input,
+                self.config,
+                stream_mode=["messages", "values"],
+            ):
+                if mode != "messages":
+                    continue
+                chunk, meta = payload
+                # Only stream tokens from the 'agent' LLM node — skip tool
+                # outputs, summarizer side-channels, etc.
+                if meta.get("langgraph_node") != "agent":
+                    continue
+                if not isinstance(chunk, AIMessageChunk):
+                    continue
+                agent_node_seen = True
+
+                text = _chunk_text(chunk)
+                if not text:
+                    continue
+                spoken_chars += len(text)
+
+                for sentence in buffer.feed(text):
+                    sentences_emitted += 1
+                    await queue.put(sentence)
+
+            tail = buffer.flush()
+            if tail:
+                sentences_emitted += 1
+                await queue.put(tail)
+        except BaseException:
+            stream_failed = True
+            raise
+        finally:
+            # On the happy path block on the sentinel so we play out everything
+            # already queued. On the failure path the consumer may be stuck in
+            # a blocking executor call (synthesize/play_audio) with the queue
+            # full — `put(None)` would deadlock — so drop the sentinel
+            # non-blockingly and cancel the consumer instead.
+            if stream_failed:
+                try:
+                    queue.put_nowait(None)
+                except asyncio.QueueFull:
+                    pass
+                consumer.cancel()
+                try:
+                    await consumer
+                except (asyncio.CancelledError, Exception):
+                    pass
+            else:
+                await queue.put(None)
+                await consumer
+
+        # After the stream finishes, query the checkpointed state to see if the
+        # graph paused on an interrupt (e.g. destructive tool confirmation).
+        state = await self.agent.aget_state(self.config)
+        pending_interrupts = []
+        for task in state.tasks:
+            for irq in getattr(task, "interrupts", []) or []:
+                pending_interrupts.append(irq)
+
+        log.info(
+            "stream_phase_done",
+            request_id=request_id,
+            chars=spoken_chars,
+            sentences=sentences_emitted,
+            agent_seen=agent_node_seen,
+            pending_interrupts=len(pending_interrupts),
+        )
+
+        # We concatenate raw chunk text (not buffered sentences) so the caller
+        # gets the exact response — important for the trailing-? heuristic.
+        return self._reconstruct_text_from_state(state), pending_interrupts
+
+    def _reconstruct_text_from_state(self, state) -> str:
+        """Pull the last AI message text from the graph state.
+
+        Used to derive the response text for follow-up detection. Falls back
+        to '' if the last message isn't an AI message (e.g. interrupt mid-tool).
+        """
+        messages = state.values.get("messages", []) if state.values else []
+        if not messages:
+            return ""
+        last = messages[-1]
+        content = getattr(last, "content", "")
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            parts = []
+            for block in content:
+                if isinstance(block, str):
+                    parts.append(block)
+                elif isinstance(block, dict) and block.get("type") == "text":
+                    t = block.get("text")
+                    if isinstance(t, str):
+                        parts.append(t)
+            return "".join(parts)
+        return ""
+
+    async def _voice_confirm_one(self, irq) -> str:
+        """Speak the interrupt's question and capture a yes/no answer.
+
+        Returns "y" or "n" — the value passed back via Command(resume=...).
+        """
+        payload = irq.value if hasattr(irq, "value") else {}
+        desc = payload.get("description", "an action") if isinstance(payload, dict) else "an action"
+        question = f"Should I proceed with {desc}?"
+        log.info("confirm_asking", description=desc)
+
+        loop = asyncio.get_running_loop()
+        q_audio, sr = await loop.run_in_executor(None, synthesize, question)
+        await loop.run_in_executor(None, play_audio, q_audio, sr)
+
+        print("Waiting for confirmation...")
+        answer_audio = await loop.run_in_executor(None, record_until_silence, None)
+        answer_text = (await loop.run_in_executor(None, transcribe, answer_audio)).lower().strip()
+        log.info("confirm_answer", text=answer_text)
+
+        approved = answer_text in ("yes", "yeah", "yep", "sure", "go ahead", "do it", "y")
+        return "y" if approved else "n"
