@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Argus — Recent tool calls{% endblock %}
+{% block content %}
+<h1>Recent tool calls</h1>
+<p class="muted">Last {{ rows | length }} events from <code>{{ log_path }}</code>.</p>
+{% if rows %}
+<table>
+  <thead>
+    <tr>
+      <th>Timestamp</th>
+      <th>Request</th>
+      <th>Event</th>
+      <th>Tool</th>
+      <th>Args</th>
+      <th>Result</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for r in rows %}
+    <tr>
+      <td>{{ r.timestamp }}</td>
+      <td><code>{{ r.request_id }}</code></td>
+      <td>{{ r.event }}</td>
+      <td>{{ r.tool }}</td>
+      <td>{{ r.args | truncate_chars(120) }}</td>
+      <td>{{ r.result | truncate_chars(160) }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="muted">No tool events recorded yet. Run the agent to populate the log.</p>
+{% endif %}
+{% endblock %}

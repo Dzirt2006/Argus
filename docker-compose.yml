@@ -173,5 +173,15 @@ services:
     volumes:
       - ./data:/data
 
+  webui:
+    build:
+      context: .
+      dockerfile: webui/Dockerfile
+    ports:
+      - "8009:8009"
+    volumes:
+      - ./data:/data:ro
+    depends_on: []
+
 volumes:
   huggingface-cache:

@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Argus Observability{% endblock %}</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <strong>Argus</strong>
+    <nav>
+      <a href="/">Home</a>
+      <a href="/memory/facts">Facts</a>
+      <a href="/memory/summaries">Summaries</a>
+      <a href="/tools/recent">Tool calls</a>
+      <a href="/health">MCP health</a>
+    </nav>
+  </header>
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+  <footer>
+    <small>Read-only dashboard. No edit endpoints.</small>
+  </footer>
+</body>
+</html>

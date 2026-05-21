@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Argus — MCP health{% endblock %}
+{% block content %}
+<h1>MCP health</h1>
+<p class="muted">HTTP GET on each MCP base URL; any HTTP response counts as reachable.</p>
+<table>
+  <thead>
+    <tr>
+      <th>Server</th>
+      <th>URL</th>
+      <th>Reachable</th>
+      <th>Status</th>
+      <th>Response time (ms)</th>
+      <th>Error</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for r in rows %}
+    <tr>
+      <td>{{ r.name }}</td>
+      <td><code>{{ r.url }}</code></td>
+      <td>
+        {% if r.reachable %}
+          <span class="ok">reachable</span>
+        {% else %}
+          <span class="bad">unreachable</span>
+        {% endif %}
+      </td>
+      <td>{{ r.status if r.status is not none else "" }}</td>
+      <td>{{ r.elapsed_ms }}</td>
+      <td>{{ r.error or "" }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}
